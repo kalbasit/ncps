@@ -113,6 +113,10 @@
             "enabled": {
               "type": "boolean"
             },
+            "requireTrustedSignature": {
+              "type": "boolean",
+              "description": "Reject PUT-uploaded narinfos lacking a signature trusted by the configured upstream public keys (fail-closed)"
+            },
             "secretKey": {
               "type": "string"
             },

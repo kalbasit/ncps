@@ -139,6 +139,11 @@ var (
 	// ErrMigrationInProgress is returned if a migration is already in progress.
 	ErrMigrationInProgress = errors.New("migration is already in progress")
 
+	// ErrUntrustedNarInfo is returned by PutNarInfo when requireTrustedSignature
+	// is enabled and the submitted narinfo carries no signature that validates
+	// against the set of trusted upstream public keys.
+	ErrUntrustedNarInfo = errors.New("narinfo has no trusted signature")
+
 	// ErrNarInfoPurged is returned if the narinfo was purged.
 	ErrNarInfoPurged = errors.New("the narinfo was purged")
 
@@ -487,6 +492,11 @@ type Cache struct {
 
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
+
+	// requireTrustedSignature, when true, makes PutNarInfo reject any narinfo
+	// that does not carry at least one signature validating against the trusted
+	// upstream public keys. Default false preserves prior behavior.
+	requireTrustedSignature bool
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -1043,9 +1053,52 @@ func (c *Cache) GetConfig() *config.Config {
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
 
+// SetCacheRequireTrustedSignature configures whether PutNarInfo rejects
+// narinfos lacking a valid trusted upstream signature.
+func (c *Cache) SetCacheRequireTrustedSignature(requireTrustedSignature bool) {
+	c.requireTrustedSignature = requireTrustedSignature
+}
+
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
 // cronjob to automatically clean-up the store.
 func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
+
+// trustedPublicKeys aggregates the public keys from all configured upstream
+// caches.
+func (c *Cache) trustedPublicKeys() []signature.PublicKey {
+	c.upstreamCachesMu.RLock()
+	defer c.upstreamCachesMu.RUnlock()
+
+	var keys []signature.PublicKey
+	for _, uc := range c.upstreamCaches {
+		keys = append(keys, uc.PublicKeys()...)
+	}
+
+	return keys
+}
+
+// verifyNarInfoTrusted returns nil when requireTrustedSignature is disabled,
+// or when the narinfo carries at least one signature that validates against
+// the trusted upstream public keys. When the gate is enabled it fails closed:
+// if no trusted keys are configured, or no signature validates, it returns
+// ErrUntrustedNarInfo (matching nix's fail-closed posture so an operator
+// cannot accidentally run a no-op verifier).
+func (c *Cache) verifyNarInfoTrusted(narInfo *narinfo.NarInfo) error {
+	if !c.requireTrustedSignature {
+		return nil
+	}
+
+	keys := c.trustedPublicKeys()
+	if len(keys) == 0 {
+		return ErrUntrustedNarInfo
+	}
+
+	if !signature.VerifyFirst(narInfo.Fingerprint(), narInfo.Signatures, keys) {
+		return ErrUntrustedNarInfo
+	}
+
+	return nil
+}
 
 func (c *Cache) isCDCEnabled() bool {
 	c.cdcMu.RLock()
@@ -4226,6 +4279,10 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		narInfo, err := narinfo.Parse(r)
 		if err != nil {
 			return fmt.Errorf("error parsing narinfo: %w", err)
+		}
+
+		if err := c.verifyNarInfoTrusted(narInfo); err != nil {
+			return fmt.Errorf("rejecting untrusted narinfo: %w", err)
 		}
 
 		// For CDC mode, normalize all NARs to Compression: none.

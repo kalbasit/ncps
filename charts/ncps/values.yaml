@@ -112,6 +112,12 @@ config:
   signing:
     # Whether to sign narInfo files
     enabled: true
+    # Reject narInfos uploaded via PUT that do not carry a signature trusted by
+    # the configured upstream public keys (fail-closed). When enabled, uploads
+    # lacking a valid trusted upstream signature are rejected, and uploads are
+    # also rejected when no trusted upstream keys are configured. Default off
+    # preserves backward-compatible passthru of client uploads.
+    requireTrustedSignature: false
     # Signing key (provided via secret if not auto-generated)
     # Leave empty to auto-generate
     secretKey: ""

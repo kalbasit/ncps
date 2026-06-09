@@ -306,6 +306,13 @@ func serveCommand(
 				Sources: flagSources("cache.sign-narinfo", "CACHE_SIGN_NARINFO"),
 				Value:   true,
 			},
+			&cli.BoolFlag{
+				Name: "cache-require-trusted-signature",
+				Usage: "Reject narinfos uploaded via PUT that do not carry a signature trusted " +
+					"by the configured upstream public keys (fail-closed). Default off.",
+				Sources: flagSources("cache.require-trusted-signature", "CACHE_REQUIRE_TRUSTED_SIGNATURE"),
+				Value:   false,
+			},
 			&cli.StringFlag{
 				Name:    "cache-temp-path",
 				Usage:   "The path to the temporary directory that is used by the cache to download NAR files",
@@ -1269,6 +1276,7 @@ func createCache(
 	}
 
 	c.AddUpstreamCaches(ctx, ucs...)
+	c.SetCacheRequireTrustedSignature(cmd.Bool("cache-require-trusted-signature"))
 
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
 	c.GetHealthChecker().Trigger()

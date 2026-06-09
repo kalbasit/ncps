@@ -89,6 +89,7 @@ data:
       {{- end }}
 
       sign-narinfo: {{ ne .Values.config.signing.enabled false }}
+      require-trusted-signature: {{ eq .Values.config.signing.requireTrustedSignature true }}
 
       upstream:
         urls:
