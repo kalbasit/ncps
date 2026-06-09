@@ -45,6 +45,11 @@ _: {
           exec python3 ${./src/cli.py} "$@"
         '';
       };
+      # Fast, offline unit tests for the harness CLI / runner / catalog logic.
+      # Excludes the `catalog` marker (those materialize config.nix via `nix
+      # eval`) and never touches the network or a cluster, so it is cheap enough
+      # to run in `nix flake check` even though the harness scenarios stay out.
+      pytestPython = pkgs.python3.withPackages (ps: with ps; [ pytest ]);
     in
     {
       packages.e2e = e2e;
@@ -53,5 +58,14 @@ _: {
         type = "app";
         program = "${e2e}/bin/e2e";
       };
+
+      checks.e2e-harness-unit = pkgs.runCommandLocal "e2e-harness-unit-tests" { } ''
+        cp -r ${./src} src
+        cp -r ${./tests} tests
+        cp ${./pytest.ini} pytest.ini
+        export PYTHONDONTWRITEBYTECODE=1
+        ${pytestPython}/bin/python -m pytest tests -m "not catalog" -q
+        touch $out
+      '';
     };
 }

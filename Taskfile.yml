@@ -33,9 +33,13 @@ tasks:
     cmds:
       - bash dev-scripts/test-auto.sh
   test:e2e:
-    desc: "Run a unified e2e harness scenario. Pass-through args, e.g. CLI_ARGS='--mode local --scenario cdc-lifecycle', CLI_ARGS='--mode kubernetes --scenario single-s3-postgres', or CLI_ARGS='--list'"
+    desc: "Run a unified e2e harness scenario. Pass-through args, e.g. CLI_ARGS='--mode local --scenario cdc-lifecycle', CLI_ARGS='--mode local --all', CLI_ARGS='--mode kubernetes --scenario single-s3-postgres', or CLI_ARGS='--list'"
     cmds:
       - nix run .#e2e -- {{.CLI_ARGS}}
+  test:e2e:unit:
+    desc: "Run the fast offline unit tests for the e2e harness (CLI/runner/catalog logic)"
+    cmds:
+      - python3 -m pytest nix/e2e-tests/tests -m "not catalog" -q
   test:deps:start:
     desc: Allocate random ports, start backing services in detached mode, write state file
     cmds:

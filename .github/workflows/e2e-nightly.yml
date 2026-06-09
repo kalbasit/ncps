@@ -1,0 +1,90 @@
+name: e2e-nightly
+# Nightly run of the full unified e2e catalog against both modes. This is the
+# scheduled home for the harness (it stays out of the per-PR `nix flake check`).
+# A `gate` job records the last successfully-tested `main` SHA in an
+# `actions/cache` entry and short-circuits when `main` has not advanced, so the
+# same commit is never e2e-tested on two consecutive nights. A manual
+# `workflow_dispatch` bypasses the gate and forces a run against current `main`.
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC nightly
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      skip: ${{ steps.decide.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Resolve current main SHA
+        id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Probe last-tested cache key
+        id: probe
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/cache/restore@v4
+        with:
+          path: .e2e-nightly
+          key: e2e-nightly-tested-${{ steps.resolve.outputs.sha }}
+          lookup-only: true
+      - name: Decide whether to skip
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "manual dispatch: forcing a run"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.probe.outputs.cache-hit }}" = "true" ]; then
+            echo "main (${{ steps.resolve.outputs.sha }}) already tested; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main (${{ steps.resolve.outputs.sha }}) not yet tested; running"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+  e2e:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [local, kubernetes]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Pin every leg to the exact SHA the gate resolved, so a mid-run push
+          # to main does not split the matrix across commits.
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Run e2e catalog (${{ matrix.mode }})
+        run: nix run .#e2e -- --mode ${{ matrix.mode }} --all
+  record:
+    needs: [gate, e2e]
+    # Only record the tested SHA after a fully successful matrix run, so a
+    # failure leaves the cache untouched and the next schedule retries the same
+    # commit.
+    if: ${{ needs.gate.outputs.skip != 'true' && needs.e2e.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stamp the tested SHA
+        run: |
+          mkdir -p .e2e-nightly
+          echo "${{ needs.gate.outputs.sha }}" > .e2e-nightly/tested
+      - name: Save last-tested cache key
+        uses: actions/cache/save@v4
+        with:
+          path: .e2e-nightly
+          key: e2e-nightly-tested-${{ needs.gate.outputs.sha }}
