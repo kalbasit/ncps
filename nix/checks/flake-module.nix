@@ -244,7 +244,7 @@
       #   push-docker-image  CLI wrapper for the CI image push step.
       #   deps               Process-compose dev dependencies, for
       #                      `nix run .#deps`.
-      #   k8s-tests          CLI tool for local Kind testing.
+      #   e2e                Unified e2e harness CLI (local + Kind modes).
       #   update-cu-base     CLI tool for the container-use base image.
       #   treefmt            Formatter devShell; `nix fmt` exercises it.
       #   default            Alias of packages.ncps, listed below as `ncps`.

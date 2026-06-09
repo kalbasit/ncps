@@ -49,7 +49,7 @@ DEFAULT_EXCLUDES = {
     "deps",  # process-compose dev deps
     "docker",  # runtime image, not a check
     "docker-dev",  # dev image, not a check
-    "k8s-tests",  # CLI tool, not a check
+    "e2e",  # unified e2e harness CLI, not a check
     "push-docker-image",  # publish action, not a check
     "treefmt",  # devshell, exercised by formatter
     "update-cu-base",  # CLI tool, not a check

@@ -31,8 +31,8 @@
       imports = [
         ./nix/checks/flake-module.nix
         ./nix/devshells/flake-module.nix
+        ./nix/e2e-tests/flake-module.nix
         ./nix/formatter/flake-module.nix
-        ./nix/k8s-tests/flake-module.nix
         ./nix/packages/flake-module.nix
         ./nix/pre-commit/flake-module.nix
         ./nix/process-compose/flake-module.nix

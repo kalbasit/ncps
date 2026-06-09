@@ -339,128 +339,51 @@ The Nix build automatically:
 1. Runs all tests (including integration tests)
 1. Stops services in `postCheck` phase
 
-### Helm Chart Testing
+### End-to-end testing (unified harness)
 
-The project includes comprehensive Helm chart testing using a local Kind cluster with Garage, PostgreSQL, MariaDB, and Redis. A unified CLI tool (`k8s-tests`) manages the complete testing workflow.
+End-to-end testing — including Helm chart validation on a local Kind cluster
+(Garage, PostgreSQL, MariaDB, Redis) — is driven by a single scenario-based
+harness, `nix run .#e2e` (also `task test:e2e`). The same scenario catalog runs
+against either a **local** `dev-scripts/run.py` deployment or a **Kubernetes**
+Kind/Helm deployment, selected with `--mode`.
 
-**Prerequisites:**
+**Prerequisites:** all tools come from the Nix development environment (Docker
+for Kind; kubectl/helm/kind/skopeo bundled into the `e2e` package). Local mode
+also uses the dev shell toolchain (`go`, `dbmate`, `direnv`, `watchexec`), so run
+local-mode scenarios via `task test:e2e` or inside `nix develop`.
 
-All tools are provided by the Nix development environment:
-
-- Docker (for Kind)
-- kubectl, helm, kind (via Nix)
-- k8s-tests CLI (automatically available in `nix develop`)
-
-**Quick Start (Complete Workflow):**
-
-```sh
-# Run all 5 steps in one command
-k8s-tests all
-```
-
-This command:
-
-1. Creates Kind cluster with all dependencies
-1. Builds and pushes Docker image
-1. Generates 13 test values files
-1. Installs all test deployments
-1. Runs comprehensive tests
-
-**Individual Steps:**
+**List scenarios:**
 
 ```sh
-# 1. Create Kind cluster with all dependencies (Garage, PostgreSQL, MariaDB, Redis)
-k8s-tests cluster create
-
-# 2. Build Docker image, push to local registry, and generate test values
-k8s-tests generate --push
-
-# 3. Install all test deployments
-k8s-tests install
-
-# 4. Run tests across all deployments
-k8s-tests test
-
-# 5. Cleanup when done
-k8s-tests cleanup
+nix run .#e2e -- --list
 ```
 
-The cluster can be reused across test runs. Use `k8s-tests cluster destroy` to clean up when done.
-
-**Alternative: Use External Image**
-
-If you've already built and pushed an image:
+**Run a scenario locally** (run.py + fixed-port `nix run .#deps` backends, started
+and torn down automatically):
 
 ```sh
-# Use a specific tag
-k8s-tests generate sha-cf09394
-
-# Use custom registry and repository
-k8s-tests generate 0.5.1 docker.io kalbasit/ncps
-
-# Or build externally and use the tag
-DOCKER_IMAGE_TAGS="yourregistry.com/ncps:sha$(git rev-parse --short HEAD)" nix run .#push-docker-image
-k8s-tests generate sha$(git rev-parse --short HEAD)-x86_64-linux yourregistry.com ncps
+task test:e2e -- --mode local --scenario cdc-lifecycle
+task test:e2e -- --mode local --scenario staging-contention
 ```
 
-**Test Permutations:**
-
-The tool generates 13 different test configurations:
-
-- **Single Instance (7 scenarios):**
-  - Local storage: SQLite, PostgreSQL, MariaDB
-  - S3 storage: SQLite, PostgreSQL, MariaDB
-  - S3 + PostgreSQL + CDC enabled
-- **External Secrets (2 scenarios):**
-  - S3 + PostgreSQL/MariaDB with existing Kubernetes secrets
-- **High Availability (4 scenarios):**
-  - 2 replicas with S3 storage
-  - PostgreSQL or MariaDB database
-  - Redis locks
-  - With/without CDC enabled
-
-**Testing Individual Deployments:**
+**Run a scenario on Kubernetes** (Kind cluster + Helm chart; the cluster is
+created idempotently and reused across runs):
 
 ```sh
-# Install a single deployment
-k8s-tests install single-local-sqlite
-
-# Test specific deployment (verbose)
-k8s-tests test single-local-sqlite -v
-
-# Test specific deployment (non-verbose)
-k8s-tests test single-s3-postgres
-
-# Cleanup specific deployment
-k8s-tests cleanup single-local-sqlite
+nix run .#e2e -- --mode kubernetes --scenario single-s3-postgres
+nix run .#e2e -- --mode kubernetes --scenario single-local-sqlite -v
 ```
 
-**Manual Installation:**
+A scenario declares which `modes` it supports; requesting it in an unsupported
+mode reports **SKIP** (never PASS).
 
-```sh
-# Install individual deployment manually using generated values
-helm upgrade --install ncps-single-local-postgres charts/ncps \
-  -f charts/ncps/test-values/single-local-postgres.yaml \
-  --create-namespace \
-  --namespace ncps-single-local-postgres
-```
+**Scenarios:** the catalog covers the single-instance, external-secret, and
+high-availability Helm permutations (formerly the `k8s-tests` permutations) plus
+the `cdc-lifecycle` (non-CDC → CDC → drain → non-CDC) and `staging-contention`
+(multi-replica in-flight-staging) feature drivers.
 
-**Cluster Management:**
-
-```sh
-# Show cluster connection information
-k8s-tests cluster info
-
-# Destroy cluster
-k8s-tests cluster destroy
-
-# Help
-k8s-tests --help
-```
-
-**Adding New Test Scenarios:**
-
-To add a custom test permutation, edit `nix/k8s-tests/config.nix`:
+**Adding a scenario:** add a permutation entry to `nix/e2e-tests/config.nix`
+(the single source of truth for both modes):
 
 ```nix
 {
@@ -473,15 +396,20 @@ To add a custom test permutation, edit `nix/k8s-tests/config.nix`:
       storage = { type = "s3"; };
       database = { type = "postgresql"; };
       redis.enabled = false;
-      features = [];  # Optional: ["cdc", "ha", "pod-disruption-budget"]
+      features = [ ]; # Optional: ["cdc", "ha", "pod-disruption-budget"]
+      # Optional harness-only keys:
+      # phase = "serve" | "cdc-lifecycle" | "staging-contention";
+      # modes = [ "local" "kubernetes" ];
     }
   ];
 }
 ```
 
-Then regenerate: `k8s-tests generate --push`
+> **CI note:** this harness is manual / opt-in and is intentionally **not** part
+> of `nix flake check` (Kind and network-NAR scenarios far exceed the per-PR
+> budget). See `nix/e2e-tests/README.md`.
 
-**For more details:** See `nix/k8s-tests/README.md`
+**For more details:** See `nix/e2e-tests/README.md`
 
 ## Pull Request Process
 

@@ -334,6 +334,61 @@ rec {
         "cdc-lifecycle"
       ];
     }
+
+    # ====================================================================
+    # Local-only phase scenarios (driven by the unified e2e harness)
+    # ====================================================================
+
+    # 14. Single instance driven through the CDC lifecycle locally. `phase`
+    #     and `modes` are harness-only keys (ignored by generateValues); CDC
+    #     boots OFF and the phase driver toggles it across the lifecycle.
+    {
+      name = "cdc-lifecycle";
+      description = "Single instance driven through the CDC lifecycle (non-CDC->CDC->drain->non-CDC)";
+      replicas = 1;
+      mode = null;
+      migration.mode = "initContainer";
+      phase = "cdc-lifecycle";
+      modes = [ "local" ];
+      storage = {
+        type = "local";
+        local = {
+          path = "/storage";
+          persistence = {
+            enabled = true;
+            size = "5Gi";
+          };
+        };
+      };
+      database = {
+        type = "sqlite";
+        sqlite.path = "/storage/db/ncps.db";
+      };
+      redis.enabled = false;
+      features = [ ];
+    }
+
+    # 15. Multi-replica contention driving in-flight NAR staging (download +
+    #     chunking windows). Local-only: the harness races concurrent same-NAR
+    #     fetches across replicas, which the k8s permutations do not.
+    {
+      name = "staging-contention";
+      description = "Multi-replica contention driving in-flight NAR staging (download + chunking windows)";
+      replicas = 2;
+      inflightStaging.enabled = true;
+      mode = "deployment";
+      migration.mode = "job";
+      phase = "staging-contention";
+      modes = [ "local" ];
+      storage = {
+        type = "s3";
+      };
+      database = {
+        type = "postgresql";
+      };
+      redis.enabled = true;
+      features = [ ];
+    }
   ];
 
   # Composable feature definitions
