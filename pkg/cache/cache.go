@@ -1202,6 +1202,14 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
+		// requestedCompression is the compression the client originally asked for. The
+		// CDC serve path normalizes narURL.Compression to none below
+		// (lookupOriginalNarURL), so capture the original here to gate the in-flight
+		// serve paths: a compressed request that can only be served as uncompressed
+		// in-flight bytes (the eager-CDC chunking window) must 404 and fall back to an
+		// upstream that has the real compressed file, never serve a mislabeled body.
+		requestedCompression := narURL.Compression
+
 		hasNarInStore := c.HasNarInStore(ctx, narURL)
 
 		c.upstreamJobsMu.Lock()
@@ -1304,7 +1312,9 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 			var serveErr error
 
-			size, reader, serveErr = c.serveNarFromStaging(ctx, &narURL, ds.stagingServe.hash, ds.stagingServe.compression)
+			size, reader, serveErr = c.serveNarFromStaging(
+				ctx, &narURL, ds.stagingServe.hash, ds.stagingServe.compression, requestedCompression,
+			)
 			if serveErr != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			}
@@ -6525,9 +6535,18 @@ func (c *Cache) coordinateDownload(
 	// Release the download lock with different strategies based on waitForStorage:
 	// - waitForStorage=true (NarInfo): Release immediately after asset is stored.
 	//   NarInfo operations require full completion before serving to clients.
-	// - waitForStorage=false (NAR): Release in background after storage completes.
-	//   This allows immediate streaming to clients while preventing other instances
-	//   from starting redundant downloads. The lock is held until storage completes.
+	// - waitForStorage=false (NAR): Release in background once the asset is fully
+	//   materialized (ds.done), not merely stored (ds.stored). This allows immediate
+	//   streaming to clients while preventing other instances from starting redundant
+	//   downloads. Crucially, for eager CDC, ds.stored closes at chunk start
+	//   (onNarFileReady) while ds.done closes only after chunking completes, so
+	//   waiting on ds.done holds the lock through the whole chunking window. That way
+	//   a cross-pod reader arriving mid-chunking contends for the lock and engages
+	//   in-flight staging instead of acquiring a free lock and short-circuiting to
+	//   chunk-based serving, which 404s a compressed request (#1289). For non-CDC and
+	//   lazy CDC, ds.done closes together with ds.stored, so the release timing is
+	//   unchanged. Holder death is still recovered by the lock TTL (the refresher
+	//   stops with the process).
 	if waitForStorage {
 		stopRefresher()
 
@@ -6544,10 +6563,7 @@ func (c *Cache) coordinateDownload(
 			defer c.backgroundWG.Done()
 			defer stopRefresher()
 
-			select {
-			case <-ds.stored:
-			case <-ds.done:
-			}
+			<-ds.done
 
 			if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 				zerolog.Ctx(ctx).Error().
@@ -8377,7 +8393,10 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 			// stream when the staged bytes are decompressed (or non-zstd).
 			narURL.TransparentZstd = false
 
-			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression)
+			// This progressive-chunk path is reached only for uncompressed (none)
+			// requests; a compressed request 404s earlier in serveNarFromStorageViaPipe.
+			// Passing narURL.Compression keeps the fallback guard correct either way.
+			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression, narURL.Compression)
 		}
 	}
 

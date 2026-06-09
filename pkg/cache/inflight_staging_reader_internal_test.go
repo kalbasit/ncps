@@ -137,7 +137,7 @@ func TestServeNarFromStaging_Transcodes(t *testing.T) {
 
 	narURL := nar.URL{Hash: hash, Compression: nar.CompressionTypeNone}
 
-	size, reader, err := c.serveNarFromStaging(ctx, &narURL, hash, nar.CompressionTypeZstd)
+	size, reader, err := c.serveNarFromStaging(ctx, &narURL, hash, nar.CompressionTypeZstd, nar.CompressionTypeNone)
 	require.NoError(t, err)
 
 	defer reader.Close()
@@ -149,4 +149,78 @@ func TestServeNarFromStaging_Transcodes(t *testing.T) {
 	got, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, string(got))
+}
+
+// TestCompressedRequestNeedsUpstreamFallback covers the guard's full matrix. ncps
+// has no NAR compressor, so the only cross-compression transform it can perform is
+// decompression (compressed available → uncompressed requested). Every other
+// non-exact compressed request — uncompressed staging OR a different compressed
+// format (e.g. xz requested, zstd staged) — must fall back upstream because serving
+// mislabeled bytes breaks the narinfo FileHash/FileSize.
+func TestCompressedRequestNeedsUpstreamFallback(t *testing.T) {
+	t.Parallel()
+
+	const empty = nar.CompressionType("") // the staging_state default for uncompressed
+
+	tests := []struct {
+		name      string
+		requested nar.CompressionType
+		available nar.CompressionType
+		want      bool
+	}{
+		{"uncompressed from uncompressed", nar.CompressionTypeNone, nar.CompressionTypeNone, false},
+		{"uncompressed from empty", nar.CompressionTypeNone, empty, false},
+		{"uncompressed from compressed (decompress)", nar.CompressionTypeNone, nar.CompressionTypeXz, false},
+		{"exact compressed match", nar.CompressionTypeXz, nar.CompressionTypeXz, false},
+		{"compressed from uncompressed", nar.CompressionTypeXz, nar.CompressionTypeNone, true},
+		{"compressed from empty", nar.CompressionTypeXz, empty, true},
+		{"xz from zstd (no transcode)", nar.CompressionTypeXz, nar.CompressionTypeZstd, true},
+		{"zstd from xz (no transcode)", nar.CompressionTypeZstd, nar.CompressionTypeXz, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, compressedRequestNeedsUpstreamFallback(tc.requested, tc.available))
+		})
+	}
+}
+
+// TestServeNarFromStaging_CompressedRequestFromUncompressedStagingFallsBack verifies
+// that a request for a compressed variant backed only by uncompressed staged bytes —
+// the eager-CDC chunking window, where the in-flight temp is decompressed for
+// chunking — returns storage.ErrNotFound (so the client falls back to an upstream that
+// has the real compressed file) rather than serving the uncompressed bytes mislabeled
+// as the requested compression. ncps has no NAR compressor and a re-compressed file
+// would not match the narinfo's FileHash/FileSize.
+func TestServeNarFromStaging_CompressedRequestFromUncompressedStagingFallsBack(t *testing.T) {
+	t.Parallel()
+
+	c, _, store, _, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	c.SetInflightStaging(true, 5*time.Minute, 1<<20, true)
+
+	ctx := context.Background()
+
+	const (
+		hash      = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+		plaintext = "the quick brown fox jumps over the lazy dog"
+	)
+
+	// Staged uncompressed (the eager-CDC temp is decompressed for chunking).
+	nParts := putStagingParts(t, store, hash, plaintext, 1<<20)
+	require.NoError(t, c.markStagingRequested(ctx, hash))
+	require.NoError(t, c.advanceStagingParts(ctx, hash, nParts, nar.CompressionTypeNone.String()))
+	require.NoError(t, c.markStagingComplete(ctx, hash))
+
+	// narURL.Compression is none here because the CDC serve path normalizes it before
+	// reaching serveNarFromStaging; the original xz request is carried by `requested`.
+	narURL := nar.URL{Hash: hash, Compression: nar.CompressionTypeNone}
+
+	_, _, err := c.serveNarFromStaging(ctx, &narURL, hash, nar.CompressionTypeNone, nar.CompressionTypeXz)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, storage.ErrNotFound,
+		"a compressed request backed only by uncompressed staging must 404 for upstream fallback")
 }

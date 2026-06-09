@@ -107,6 +107,20 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Cross-pod NAR serving during the eager-CDC chunking window.** With CDC and HA
+  (replicas > 1), the NAR download lock was released as soon as the raw bytes were
+  stored (chunk start), so a cross-pod reader could acquire the now-free lock
+  mid-chunking and bypass in-flight staging. ncps now holds the NAR download lock
+  through the eager-CDC chunking window (releasing it only once chunking completes),
+  so a cross-pod reader arriving mid-chunking contends and is served the complete,
+  **uncompressed** NAR from in-flight staging rather than the fragile progressive
+  chunk reassembly. A request for a **compressed** variant (e.g. `.nar.xz`) during
+  the chunking window — which cannot be reconstructed from the decompressed in-flight
+  bytes — now cleanly returns a not-found so the client falls back to an upstream
+  that has the original compressed file, instead of being served a mislabeled body.
+  Non-CDC and lazy-CDC download-lock timing is unchanged, and holder death during
+  chunking is still recovered via the lock TTL. (#1289)
+
 - **Compressed upstream narinfos that omit `FileSize`/`FileHash` are no longer
   rejected.** Some upstreams (e.g. niks3, nix-serve-style servers) emit narinfos
   declaring a compression algorithm but without the optional `FileSize`/`FileHash`
