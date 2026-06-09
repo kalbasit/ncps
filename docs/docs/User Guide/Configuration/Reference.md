@@ -206,6 +206,7 @@ In-flight staging resolves the cross-pod serve-during-download gap for **all** m
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-sign-narinfo` | Sign NarInfo files with private key | `CACHE_SIGN_NARINFO` | `true` |
+| `--cache-require-trusted-signature` | Reject PUT-uploaded narinfos lacking a signature trusted by the configured upstream public keys (fail-closed) | `CACHE_REQUIRE_TRUSTED_SIGNATURE` | `false` |
 | `--cache-secret-key-path` | Path to signing private key | `CACHE_SECRET_KEY_PATH` | auto-generated |
 | `--cache-allow-put-verb` | Allow PUT uploads to cache (requires `/upload` prefix) | `CACHE_ALLOW_PUT_VERB` | `false` |
 | `--cache-allow-delete-verb` | Allow DELETE operations on cache | `CACHE_ALLOW_DELETE_VERB` | `false` |

@@ -113,6 +113,12 @@ cache:
   secret-key-path: ""
   # Whether to sign narInfo files or passthru as-is from upstream
   sign-narinfo: true
+  # Reject narInfos uploaded via PUT that do not carry a signature trusted by
+  # the configured upstream public keys (fail-closed). When enabled, uploads
+  # are rejected if no signature validates against the trusted upstream keys,
+  # and also rejected when no trusted upstream keys are configured at all.
+  # Default off preserves backward-compatible passthru of client uploads.
+  require-trusted-signature: false
   storage:
     # The local data path used for configuration and cache storage
     # Use this OR S3 storage (cache.storage.s3.bucket) - not both

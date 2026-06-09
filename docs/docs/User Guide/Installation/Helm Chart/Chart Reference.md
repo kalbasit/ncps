@@ -120,6 +120,7 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.permissions.allowPut` | Allow PUT requests (requires `/upload` prefix) | `false` |
 | `config.permissions.allowDelete` | Allow DELETE requests | `false` |
 | `config.signing.enabled` | Enable NAR signing | `true` |
+| `config.signing.requireTrustedSignature` | Reject PUT-uploaded narinfos lacking a signature trusted by the configured upstream public keys (fail-closed) | `false` |
 | `config.signing.secretKey` | Signing secret key | `""` |
 | `config.signing.existingSecret` | Existing secret with signing key | `""` |
 

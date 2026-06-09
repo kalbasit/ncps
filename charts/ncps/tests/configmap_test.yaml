@@ -269,6 +269,23 @@ tests:
           path: data["config.yaml"]
           pattern: "sign-narinfo: true"
 
+  - it: should default require-trusted-signature to false
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "require-trusted-signature: false"
+
+  - it: should enable require-trusted-signature when set
+    set:
+      config.hostname: test.example.com
+      config.signing.requireTrustedSignature: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "require-trusted-signature: true"
+
   - it: should configure upstream caches
     set:
       config.hostname: test.example.com
