@@ -113,7 +113,8 @@ func TestPullNarInfo_EagerCDC_AdvertisesNoneURL(t *testing.T) {
 	c, dbClient := setupCDCPullCache(t, false)
 
 	reqCtx := withNarPrefetchDisabled(newContext())
-	_, _ = c.GetNarInfo(reqCtx, testdata.Nar1.NarInfoHash)
+	_, err := c.GetNarInfo(reqCtx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "GetNarInfo must succeed (narinfo is fetched and persisted even with prefetch disabled)")
 
 	row, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
@@ -146,7 +147,8 @@ func TestPullNarInfo_LazyCDC_RetainsXzURL(t *testing.T) {
 	c, dbClient := setupCDCPullCache(t, true)
 
 	reqCtx := withNarPrefetchDisabled(newContext())
-	_, _ = c.GetNarInfo(reqCtx, testdata.Nar1.NarInfoHash)
+	_, err := c.GetNarInfo(reqCtx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "GetNarInfo must succeed (narinfo is fetched and persisted even with prefetch disabled)")
 
 	row, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
