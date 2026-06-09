@@ -29,10 +29,19 @@ Mechanism: **Option A** — hold the NAR download lock through the eager-CDC chu
 
 - [x] 5b.1 `serveNarFromStaging` gained a `requested` compression param + `compressedRequestNeedsUpstreamFallback` helper: returns `storage.ErrNotFound` when a compressed variant is requested but staging holds uncompressed bytes (eager-CDC), so the client falls back to upstream instead of being served a mislabeled body. Tests: `TestServeNarFromStaging_CompressedRequestFromUncompressedStagingFallsBack`. Commit `d77881bc`.
 
-## 6. End-to-end — RED, root fix deferred
+## 6. Out of scope — deferred to the narinfo-`none` root fix
 
-- [ ] 6.1 The contention e2e (`dev-scripts/test-inflight-staging-contention-e2e.py --window chunking`, xz upstream) is RED: it expects the `.nar.xz` request served from staging, but for eager CDC that is unachievable — the in-flight bytes are uncompressed and ncps has no NAR compressor. The e2e's chunking-window expectation must be redesigned (test a none-upstream NAR for staging-serves-uncompressed; expect compressed→fallback). DEFERRED with the narinfo-`none` root fix — see memory `project_cdc_narinfo_none_root_fix`.
-- [ ] 6.2 Same-pod temp path has the identical pre-existing corruption; a guard there was reverted (breaks the deliberate `cdc_test.go:676`). DEFERRED to the root-fix session.
+Two follow-ups are intentionally **not** part of this scoped change; both are
+captured in memory `project_cdc_narinfo_none_root_fix` for a fresh session:
+
+- The contention e2e (`--window chunking`, xz upstream) expects the `.nar.xz`
+  request served from staging — unachievable for eager CDC (in-flight bytes are
+  uncompressed; ncps has no NAR compressor). The e2e's chunking-window expectation
+  needs redesigning (test a none-upstream NAR for staging-serves-uncompressed;
+  expect compressed→fallback) — addressed by the root fix.
+- The same-pod temp path has the identical pre-existing corruption; a guard there
+  was reverted because it breaks the deliberate `cdc_test.go:676`. The root fix
+  (advertise narinfo `none` so `.nar.xz` is never requested) subsumes it.
 
 ## 7. Finalize
 
