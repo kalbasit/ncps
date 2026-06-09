@@ -151,6 +151,42 @@ func TestServeNarFromStaging_Transcodes(t *testing.T) {
 	assert.Equal(t, plaintext, string(got))
 }
 
+// TestCompressedRequestNeedsUpstreamFallback covers the guard's full matrix. ncps
+// has no NAR compressor, so the only cross-compression transform it can perform is
+// decompression (compressed available → uncompressed requested). Every other
+// non-exact compressed request — uncompressed staging OR a different compressed
+// format (e.g. xz requested, zstd staged) — must fall back upstream because serving
+// mislabeled bytes breaks the narinfo FileHash/FileSize.
+func TestCompressedRequestNeedsUpstreamFallback(t *testing.T) {
+	t.Parallel()
+
+	const empty = nar.CompressionType("") // the staging_state default for uncompressed
+
+	tests := []struct {
+		name      string
+		requested nar.CompressionType
+		available nar.CompressionType
+		want      bool
+	}{
+		{"uncompressed from uncompressed", nar.CompressionTypeNone, nar.CompressionTypeNone, false},
+		{"uncompressed from empty", nar.CompressionTypeNone, empty, false},
+		{"uncompressed from compressed (decompress)", nar.CompressionTypeNone, nar.CompressionTypeXz, false},
+		{"exact compressed match", nar.CompressionTypeXz, nar.CompressionTypeXz, false},
+		{"compressed from uncompressed", nar.CompressionTypeXz, nar.CompressionTypeNone, true},
+		{"compressed from empty", nar.CompressionTypeXz, empty, true},
+		{"xz from zstd (no transcode)", nar.CompressionTypeXz, nar.CompressionTypeZstd, true},
+		{"zstd from xz (no transcode)", nar.CompressionTypeZstd, nar.CompressionTypeXz, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, compressedRequestNeedsUpstreamFallback(tc.requested, tc.available))
+		})
+	}
+}
+
 // TestServeNarFromStaging_CompressedRequestFromUncompressedStagingFallsBack verifies
 // that a request for a compressed variant backed only by uncompressed staged bytes —
 // the eager-CDC chunking window, where the in-flight temp is decompressed for

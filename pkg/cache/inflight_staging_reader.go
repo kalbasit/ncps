@@ -286,11 +286,15 @@ func isNoneCompression(ct nar.CompressionType) bool {
 // compressedRequestNeedsUpstreamFallback reports whether a request for `requested`
 // compression cannot be satisfied from in-flight data that exists only as `available`
 // compression. ncps cannot compress a NAR (there is no NAR compressor, and a
-// re-compressed file would not match the narinfo's FileHash/FileSize), so a request
-// for a compressed variant backed only by uncompressed in-flight bytes — the eager-CDC
-// chunking window — must 404 and fall back to an upstream that has the original
-// compressed file. Decompression (compressed available, uncompressed requested) and
-// exact-match serving are always fine and are NOT flagged here.
+// re-compressed file would not match the narinfo's FileHash/FileSize), so the only
+// cross-compression transform it can perform is decompression. A compressed request
+// is therefore serviceable from staging only when the staged bytes are already in the
+// exact same compression; any other compressed request — backed by uncompressed bytes
+// (the eager-CDC chunking window) OR by a different compressed format (e.g. xz
+// requested, zstd staged) — must 404 and fall back to an upstream that has the
+// original file, because serving mislabeled bytes breaks the narinfo FileHash/FileSize.
+// Decompression (compressed available, uncompressed requested) and exact-match serving
+// are always fine and are NOT flagged here.
 func compressedRequestNeedsUpstreamFallback(requested, available nar.CompressionType) bool {
-	return !isNoneCompression(requested) && isNoneCompression(available)
+	return !isNoneCompression(requested) && requested != available
 }
