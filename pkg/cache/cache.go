@@ -6525,9 +6525,18 @@ func (c *Cache) coordinateDownload(
 	// Release the download lock with different strategies based on waitForStorage:
 	// - waitForStorage=true (NarInfo): Release immediately after asset is stored.
 	//   NarInfo operations require full completion before serving to clients.
-	// - waitForStorage=false (NAR): Release in background after storage completes.
-	//   This allows immediate streaming to clients while preventing other instances
-	//   from starting redundant downloads. The lock is held until storage completes.
+	// - waitForStorage=false (NAR): Release in background once the asset is fully
+	//   materialized (ds.done), not merely stored (ds.stored). This allows immediate
+	//   streaming to clients while preventing other instances from starting redundant
+	//   downloads. Crucially, for eager CDC, ds.stored closes at chunk start
+	//   (onNarFileReady) while ds.done closes only after chunking completes, so
+	//   waiting on ds.done holds the lock through the whole chunking window. That way
+	//   a cross-pod reader arriving mid-chunking contends for the lock and engages
+	//   in-flight staging instead of acquiring a free lock and short-circuiting to
+	//   chunk-based serving, which 404s a compressed request (#1289). For non-CDC and
+	//   lazy CDC, ds.done closes together with ds.stored, so the release timing is
+	//   unchanged. Holder death is still recovered by the lock TTL (the refresher
+	//   stops with the process).
 	if waitForStorage {
 		stopRefresher()
 
@@ -6544,10 +6553,7 @@ func (c *Cache) coordinateDownload(
 			defer c.backgroundWG.Done()
 			defer stopRefresher()
 
-			select {
-			case <-ds.stored:
-			case <-ds.done:
-			}
+			<-ds.done
 
 			if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 				zerolog.Ctx(ctx).Error().
