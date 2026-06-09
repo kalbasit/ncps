@@ -486,6 +486,21 @@ def run_phase(db, storage, replicas, clients, cdc, package, results_dir):
         comp = fields.get("Compression", "none")
         check(bool(nar_url), "narinfo served with a NAR URL (NAR still uncached)")
 
+        # The chunking window is eager CDC. Predictive narinfo-none means clients
+        # request the uncompressed .nar (never .nar.xz), so the cross-pod race serves
+        # from staging without ever hitting the compressed-fallback. Assert the value
+        # (not just presence) so a regression to xz — which would corrupt or fall back
+        # mid-chunking — cannot pass silently.
+        if cdc:
+            check(
+                comp == "none",
+                f"eager-CDC chunking-window narinfo advertises Compression: none (got {comp!r})",
+            )
+            check(
+                nar_url.endswith(".nar") and not nar_url.endswith(".nar.xz"),
+                f"eager-CDC narinfo URL is the uncompressed .nar (got {nar_url!r})",
+            )
+
         # Drive the contention race.
         log(f"  racing {clients} clients on {nar_url} (Compression={comp})", B)
         race = race_fetch(ports, nar_url, comp, clients)
