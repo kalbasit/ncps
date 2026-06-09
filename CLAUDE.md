@@ -108,4 +108,4 @@ Integration tests in CI run via per-backend Nix derivations (`ncps-s3-tests`, `n
 ## Helm Chart and Kind Tests
 
 - Helm unit tests: `helm unittest charts/ncps` (or `nix flake check` in CI). See `charts/ncps/tests/README.md`.
-- Kind integration tests: `k8s-tests all` (12 deployment permutations). See `nix/k8s-tests/README.md`.
+- End-to-end tests (local run.py or Kind/Helm): unified harness `nix run .#e2e` / `task test:e2e` (`--mode local|kubernetes --scenario <name>`, `--list`). Manual/opt-in, NOT in `nix flake check`. See `nix/e2e-tests/README.md`.

@@ -128,7 +128,7 @@
               fi
             '')
 
-            config.packages.k8s-tests
+            config.packages.e2e
           ]
           ++ (
             let

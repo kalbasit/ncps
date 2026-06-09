@@ -46,6 +46,26 @@ eval "$(disable-integration-tests)"
 - `enable-integration-tests` - All integration tests
 - `disable-integration-tests` - Disable all
 
+### End-to-end tests
+
+End-to-end scenarios (serve, CDC lifecycle, in-flight staging contention, and
+the Helm deployment permutations) run through the unified harness, against
+either a local `run.py` deployment or a Kind/Helm cluster:
+
+```sh
+# List scenarios.
+nix run .#e2e -- --list
+
+# Local mode (auto-manages `nix run .#deps` backends).
+task test:e2e -- --mode local --scenario cdc-lifecycle
+
+# Kubernetes mode (Kind + Helm).
+nix run .#e2e -- --mode kubernetes --scenario single-s3-postgres
+```
+
+The harness is manual / opt-in and is **not** part of `nix flake check`. See
+`nix/e2e-tests/README.md` for the full scenario catalog and modes.
+
 ### CI/CD Testing
 
 In Nix builds and CI, all integration tests run automatically:
