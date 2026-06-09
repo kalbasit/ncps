@@ -1213,7 +1213,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		// download. isServable is the single source of truth; see its doc comment.
 		// A backing-less placeholder row is therefore never served — it falls through
 		// to prePullNar below and re-downloads instead of returning a 404.
-		hasNar, err := c.isServable(ctx, narURL)
+		// narServability returns both states in one pass: `finished` (the NAR is fully
+		// materialized) is reused by the compressed-request gate below, so it does not
+		// repeat the HasNarInStore stat and nar_file lookup already done here.
+		hasNar, finished, err := c.narServability(ctx, narURL)
 		if err != nil {
 			return err
 		}
@@ -1227,6 +1230,20 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			if err != nil {
 				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 			}
+		}
+
+		// An actively-chunking NAR (servable but not yet finished) is stored only as
+		// decompressed chunks, so it cannot satisfy a compressed request: serving it
+		// from chunks would 404 (serveNarFromStorageViaPipe -> serveFromChunks). For a
+		// cross-pod reader (no local download job) that short-circuit also skips
+		// download coordination entirely, so the waiter never records an in-flight
+		// staging request and never serves from staging. Treat such a request as
+		// not-servable here so it falls through to prePullNar -> coordination, where it
+		// records a staging request and serves from in-flight staging (transcoding to
+		// the requested compression). The uncompressed progressive-chunk path and
+		// finished NARs are unaffected (closes the chunking-window cross-pod 404, #1289).
+		if hasNar && narURL.Compression != nar.CompressionTypeNone && !finished {
+			hasNar = false
 		}
 
 		if hasNar {
