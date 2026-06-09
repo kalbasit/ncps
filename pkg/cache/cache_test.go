@@ -927,6 +927,84 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 	}
 }
 
+func testPutNarInfoRequireTrustedSignature(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		putNarInfo := func(t *testing.T, c *cache.Cache) error {
+			t.Helper()
+
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+
+			return c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r)
+		}
+
+		narInfoCount := func(t *testing.T, dbClient *database.Client) int {
+			t.Helper()
+
+			count, err := dbClient.Ent().NarInfo.Query().Count(newContext())
+			require.NoError(t, err)
+
+			return count
+		}
+
+		t.Run("disabled accepts narinfo without trusted upstream signature", func(t *testing.T) {
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			require.NoError(t, putNarInfo(t, c))
+		})
+
+		t.Run("enabled rejects when no trusted keys are configured", func(t *testing.T) {
+			c, dbClient, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			c.SetCacheRequireTrustedSignature(true)
+
+			err := putNarInfo(t, c)
+			require.ErrorIs(t, err, cache.ErrUntrustedNarInfo)
+			assert.Equal(t, 0, narInfoCount(t, dbClient))
+		})
+
+		t.Run("enabled rejects narinfo with untrusted signature", func(t *testing.T) {
+			ts := testdata.NewTestServer(t, 40)
+			t.Cleanup(ts.Close)
+
+			c, dbClient, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: []string{"untrusted-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="},
+			})
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(newContext(), uc)
+			c.SetCacheRequireTrustedSignature(true)
+
+			err = putNarInfo(t, c)
+			require.ErrorIs(t, err, cache.ErrUntrustedNarInfo)
+			assert.Equal(t, 0, narInfoCount(t, dbClient))
+		})
+
+		t.Run("enabled accepts narinfo with trusted upstream signature", func(t *testing.T) {
+			ts := testdata.NewTestServer(t, 40)
+			t.Cleanup(ts.Close)
+
+			c, dbClient, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			})
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(newContext(), uc)
+			c.SetCacheRequireTrustedSignature(true)
+
+			require.NoError(t, putNarInfo(t, c))
+			assert.Equal(t, 1, narInfoCount(t, dbClient))
+		})
+	}
+}
+
 func testPutNarInfoDeadlock(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		c, _, _, _, _, cleanup := factory(t)
@@ -3101,6 +3179,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoWithoutSignature", testGetNarInfoWithoutSignature(factory))
 	t.Run("GetNarInfo", testGetNarInfo(factory))
 	t.Run("PutNarInfo", testPutNarInfo(factory))
+	t.Run("PutNarInfoRequireTrustedSignature", testPutNarInfoRequireTrustedSignature(factory))
 	t.Run("PutNarInfoDeadlock", testPutNarInfoDeadlock(factory))
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))

@@ -266,6 +266,12 @@ func (c *Cache) SetPriority(priority uint64) {
 	c.priority = priority
 }
 
+// PublicKeys returns the parsed trusted public keys configured for this
+// upstream cache. It returns an empty slice when none were configured.
+func (c *Cache) PublicKeys() []signature.PublicKey {
+	return c.publicKeys
+}
+
 // ParsePriority parses the priority from the upstream.
 func (c *Cache) ParsePriority(ctx context.Context) (uint64, error) {
 	return c.parsePriority(ctx)
