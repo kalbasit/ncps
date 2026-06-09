@@ -10,7 +10,7 @@ drivers depend only on this protocol plus :class:`client.Client` and
 
 from __future__ import annotations
 
-from typing import List, Protocol, Tuple
+from typing import List, Optional, Protocol, Tuple
 
 from client import Client
 from db import DBAccess
@@ -33,7 +33,17 @@ class Deployment(Protocol):
         """Stop and restart with changed CDC serve flags (drain lifecycle)."""
         ...
 
-    def run_subcommand(self, subcmd: str, extra=None, timeout: int = 300) -> Tuple[int, str]:
+    def stop(self) -> None:
+        """Stop the running instance(s) without restarting (drain prep)."""
+        ...
+
+    def start(self, *, cdc: bool = False, lazy: bool = False) -> None:
+        """Start fresh instance(s) preserving data (no clean)."""
+        ...
+
+    def run_subcommand(
+        self, subcmd: str, extra: Optional[List[str]] = None, timeout: int = 300
+    ) -> Tuple[int, str]:
         """Run `ncps <subcmd>` with the scenario's db + storage flags."""
         ...
 

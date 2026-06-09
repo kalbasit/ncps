@@ -44,14 +44,15 @@ class DBAccess:
                 conn.close()
         if self.dialect == "mysql":
             import pymysql
-            from urllib.parse import urlparse
+            from urllib.parse import unquote, urlparse
 
             parsed = urlparse(self.url)
+            # Credentials in the URL may be percent-encoded; pymysql wants them decoded.
             conn = pymysql.connect(
                 host=parsed.hostname,
                 port=parsed.port or 3306,
-                user=parsed.username,
-                password=parsed.password or "",
+                user=unquote(parsed.username) if parsed.username else None,
+                password=unquote(parsed.password) if parsed.password else "",
                 database=parsed.path.lstrip("/"),
             )
             try:

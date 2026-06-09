@@ -80,7 +80,7 @@ class LocalDeployment:
 
         os.makedirs(LOG_DIR, exist_ok=True)
         harness_log_path = os.path.join(LOG_DIR, "e2e-run.py.log")
-        self._harness_log = open(harness_log_path, "w")
+        self._harness_log = open(harness_log_path, "w", encoding="utf-8")
         log(
             f"local: run.py db={self.database} storage={self.storage} "
             f"replicas={self.replicas} locker={self.locker} cdc={cdc} lazy={lazy} "
@@ -228,7 +228,7 @@ class LocalDeployment:
         port = self._ports()[replica]
         path = os.path.join(LOG_DIR, f"ncps-{port}.log")
         try:
-            with open(path, "r", errors="replace") as f:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
                 return f.read()
         except FileNotFoundError:
             return ""

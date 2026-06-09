@@ -78,7 +78,7 @@ workflow, not on pull requests.
 
 ## Layout
 
-```
+```text
 nix/e2e-tests/
   flake-module.nix       packages.e2e + apps.e2e (writeShellApplication)
   config.nix             scenario catalog (shared by both modes)

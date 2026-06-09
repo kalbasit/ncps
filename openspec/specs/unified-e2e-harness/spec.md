@@ -33,7 +33,7 @@ The harness SHALL accept a `--mode local|kubernetes` flag that selects the deplo
 
 #### Scenario: Topology unsupported in the selected mode is skipped explicitly
 
-- **WHEN** a scenario requires a topology the selected mode cannot express (e.g. a multi-replica scenario requested in a single-process local mode)
+- **WHEN** a scenario requires a topology the selected mode cannot express (e.g. an external-secret or anti-affinity scenario, which only `kubernetes` mode provides, requested with `--mode local`)
 - **THEN** the harness reports the scenario as SKIPPED with the reason, and does not report it as PASSED
 
 ### Requirement: Declarative scenario catalog

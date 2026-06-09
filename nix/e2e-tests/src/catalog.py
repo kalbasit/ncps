@@ -33,15 +33,11 @@ def _config_file() -> str:
     explicit = os.environ.get("CONFIG_FILE")
     if explicit:
         return explicit
-    repo_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    for candidate in (
-        os.path.join(repo_root, "nix", "e2e-tests", "config.nix"),
-        os.path.join(repo_root, "nix", "k8s-tests", "config.nix"),
-    ):
-        if os.path.exists(candidate):
-            return candidate
+    from harness_config import find_repo_root
+
+    candidate = os.path.join(find_repo_root(), "nix", "e2e-tests", "config.nix")
+    if os.path.exists(candidate):
+        return candidate
     raise FileNotFoundError(
         "could not locate config.nix; set CONFIG_FILE to the catalog path"
     )
@@ -70,21 +66,23 @@ def _derive_cdc(perm: Dict[str, Any]) -> str:
     explicit = perm.get("cdc")
     if explicit:
         return explicit
-    return "eager" if "cdc" in perm.get("features", []) else "off"
+    # `or default` (not get default) so an explicit null in the Nix config is
+    # treated as absent rather than crashing.
+    return "eager" if "cdc" in (perm.get("features") or []) else "off"
 
 
 def _derive_modes(perm: Dict[str, Any]) -> List[str]:
     explicit = perm.get("modes")
     if explicit:
         return list(explicit)
-    features = set(perm.get("features", []))
-    storage = perm.get("storage", {})
-    database = perm.get("database", {})
+    features = set(perm.get("features") or [])
+    storage = perm.get("storage") or {}
+    database = perm.get("database") or {}
     k8s_only = (
         bool(features & _K8S_ONLY_FEATURES)
         or storage.get("useExistingSecret", False)
         or database.get("useExistingSecret", False)
-        or perm.get("migration", {}).get("mode") == "job"
+        or (perm.get("migration") or {}).get("mode") == "job"
     )
     return ["kubernetes"] if k8s_only else ["local", "kubernetes"]
 
@@ -93,21 +91,21 @@ def _derive_phase(perm: Dict[str, Any]) -> str:
     explicit = perm.get("phase")
     if explicit:
         return explicit
-    if "cdc-lifecycle" in perm.get("features", []):
+    if "cdc-lifecycle" in (perm.get("features") or []):
         return "cdc-lifecycle"
     return "serve"
 
 
 def _to_scenario(perm: Dict[str, Any]) -> Scenario:
-    db_type = perm.get("database", {}).get("type", "sqlite")
+    db_type = (perm.get("database") or {}).get("type", "sqlite")
     return Scenario(
         name=perm["name"],
         description=perm.get("description", ""),
-        storage=perm.get("storage", {}).get("type", "local"),
+        storage=(perm.get("storage") or {}).get("type", "local"),
         database=_DB_TO_RUNPY.get(db_type, db_type),
         replicas=int(perm.get("replicas", 1)),
         cdc=_derive_cdc(perm),
-        staging=bool(perm.get("inflightStaging", {}).get("enabled", False)),
+        staging=bool((perm.get("inflightStaging") or {}).get("enabled", False)),
         phase=_derive_phase(perm),
         modes=_derive_modes(perm),
         raw=perm,

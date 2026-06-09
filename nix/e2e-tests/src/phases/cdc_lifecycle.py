@@ -132,7 +132,7 @@ def run(deployment, scenario) -> None:
     candidates = int(m.group(1)) if m else 0
     check(candidates > 0, f"dry-run reports drain candidates (total={candidates})")
     check(_chunked_nar_count(db) > 0, "dry-run did not mutate; chunks still present")
-    rc, out = deployment.run_subcommand("migrate-chunks-to-nar", ["--force-reclaim"])
+    rc, _ = deployment.run_subcommand("migrate-chunks-to-nar", ["--force-reclaim"])
     check(rc == 0, f"migrate-chunks-to-nar --force-reclaim exited cleanly (rc={rc})")
     check(_chunked_nar_count(db) == 0, "migrate-chunks-to-nar drained all chunked NARs")
 
