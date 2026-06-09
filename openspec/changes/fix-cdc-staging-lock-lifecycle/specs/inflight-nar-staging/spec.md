@@ -35,9 +35,11 @@ The holder SHALL treat a staging request as a clean no-op only when the NAR is g
 
 ### Requirement: Cross-pod readers serve a complete, byte-correct NAR from staging in all CDC modes
 
-A waiting replica that observes available staging parts SHALL tail them to reassemble and serve a complete, byte-correct NAR, regardless of whether CDC is disabled, lazy, or eager. The served bytes SHALL carry the compression recorded in `staging_state.compression`; when the client requests a different compression, the reader SHALL transcode on the fly at parity with the same-pod streaming path. A reader SHALL NOT deliver a truncated NAR as an HTTP 200. When the holder is alive and staging parts are available, a waiting replica SHALL prefer serving from staging over routing to chunk-based serving, so that an actively-chunking (eager-CDC) NAR is never returned to the client as an HTTP 404 merely because the requested compression cannot be produced from chunks. A replica that observes an actively-chunking NAR (visible cross-pod, not yet finished) and receives a request for a compression that cannot be produced from chunks SHALL enter download coordination (recording an in-flight staging request) rather than short-circuiting to chunk-based serving and returning HTTP 404.
+A waiting replica that observes available staging parts SHALL tail them to reassemble and serve a complete, byte-correct NAR, regardless of whether CDC is disabled, lazy, or eager. The served bytes carry the compression recorded in `staging_state.compression`; when the client requests the uncompressed (`none`) variant of compressed staged bytes, the reader SHALL decompress on the fly at parity with the same-pod streaming path. A reader SHALL NOT deliver a truncated NAR as an HTTP 200.
 
-This coordination relies on the download holder retaining the NAR download lock through the eager-CDC chunking window (see the `cdc-chunking` capability). A cross-pod reader arriving mid-chunking therefore **contends** for the held lock and enters the staging-request path (recording an in-flight staging request and serving from staging once parts are available), rather than acquiring a free lock and short-circuiting to chunk-based serving — which would return HTTP 404 for a compressed request. The reader SHALL NOT re-download or re-chunk the NAR while the holder's chunking is live.
+For the **eager-CDC chunking window** the staged bytes are uncompressed (the temp is decompressed for chunking, so there is no whole-file copy in any compressed form). A request for the **uncompressed** variant SHALL be served the complete NAR from staging. A request for a **compressed** variant cannot be reconstructed from uncompressed staged bytes (ncps has no NAR compressor, and a re-compressed file would not match the narinfo `FileHash`/`FileSize`), so the staging serve SHALL return a not-found and the client SHALL fall back to an upstream that has the original compressed file — never the uncompressed bytes mislabeled as the requested compression.
+
+This relies on the download holder retaining the NAR download lock through the eager-CDC chunking window (see the `cdc-chunking` capability). A cross-pod reader arriving mid-chunking therefore **contends** for the held lock and enters the staging-request path, rather than acquiring a free lock and short-circuiting to chunk-based serving. The reader SHALL NOT re-download or re-chunk the NAR while the holder's chunking is live.
 
 #### Scenario: Non-CDC cross-pod serve during download
 
@@ -45,36 +47,35 @@ This coordination relies on the download holder retaining the NAR download lock 
 - **AND** staging is active
 - **THEN** replica B SHALL serve the complete NAR from staging parts with HTTP 200
 
-#### Scenario: Compressed request during active chunking coordinates instead of short-circuiting to chunks
+#### Scenario: Compressed request during active chunking coordinates, then falls back to upstream
 
 - **WHEN** replica A is actively chunking a NAR (its cross-pod-visible `nar_file` row has `total_chunks==0` with a live chunker) and replica B receives a request for a compressed variant (e.g. `.nar.xz`)
-- **THEN** replica B SHALL NOT short-circuit to chunk-based serving (which cannot produce the compressed variant)
-- **AND** replica B SHALL enter download coordination and record an in-flight staging request, so the request can be served from staging once parts are available
+- **THEN** replica B SHALL enter download coordination rather than acquiring a free lock and short-circuiting to chunk-based serving
+- **AND** because the in-flight bytes are uncompressed, the staging serve SHALL return a not-found so the client falls back to an upstream that has the original compressed file
 
 #### Scenario: Uncompressed request during active chunking still streams from chunks
 
 - **WHEN** replica A is actively chunking a NAR and replica B receives a request for the uncompressed (`none`) variant
 - **THEN** replica B SHALL serve progressively from chunks as they are committed, unchanged by the compressed-request coordination behavior
 
-#### Scenario: Reader contends for the held lock mid-chunking and serves from staging, not a 404
+#### Scenario: Reader contends for the held lock mid-chunking and serves an uncompressed request from staging
 
 - **WHEN** the holder retains the download lock while it continues chunking an eager-CDC NAR for hash `H` (no whole-file copy in shared storage)
-- **AND** replica B contends for the held lock and receives a request for a compressed variant of `H`
-- **THEN** replica B SHALL enter download coordination, record an in-flight staging request, and serve from staging once parts are available
-- **AND** replica B SHALL NOT return HTTP 404 by short-circuiting to chunk-based serving, and SHALL NOT re-download or re-chunk the NAR
+- **AND** replica B contends for the held lock and receives a request for the uncompressed (`none`) variant of `H`
+- **THEN** replica B SHALL enter download coordination, record an in-flight staging request, and serve the complete NAR from staging once parts are available
+- **AND** replica B SHALL NOT re-download or re-chunk the NAR
 
-#### Scenario: Eager-CDC cross-pod serve prefers staging over chunk routing
+#### Scenario: Eager-CDC compressed cross-pod request falls back to upstream
 
-- **WHEN** CDC is eager and replica A holds the download lock and is actively chunking a NAR (its `nar_file` row exists but `total_chunks` is still 0) with replica B waiting
-- **AND** staging is active and the holder has produced staging parts
-- **THEN** replica B SHALL serve the complete NAR from staging parts with HTTP 200, transcoding to the requested compression
-- **AND** replica B SHALL NOT return HTTP 404 by routing to chunk-based serving that cannot satisfy the requested compression
+- **WHEN** CDC is eager and replica A is actively chunking a NAR (its `nar_file` row exists but `total_chunks` is still 0), the staged bytes are uncompressed, and replica B requests a compressed variant
+- **THEN** replica B SHALL return a not-found from the staging serve path so the client falls back to an upstream that has the original compressed file
+- **AND** replica B SHALL NOT serve the uncompressed staged bytes mislabeled as the requested compression
 
-#### Scenario: Compression transcode on serve
+#### Scenario: Compression transcode on serve (decompression only)
 
-- **WHEN** staged parts hold compression `C` and the client requests a different compression
-- **THEN** the reader SHALL transcode the staged bytes to the requested compression while serving
-- **AND** the response SHALL advertise the compression actually served
+- **WHEN** staged parts hold a compressed form and the client requests the uncompressed (`none`) variant
+- **THEN** the reader SHALL decompress the staged bytes on the fly while serving and advertise `none`
+- **AND** a request for a compressed variant backed only by uncompressed staged bytes SHALL instead return a not-found (ncps cannot re-compress to a `FileHash`/`FileSize`-matching file), so the client falls back to upstream
 
 #### Scenario: Stalled producer does not yield a truncated success
 

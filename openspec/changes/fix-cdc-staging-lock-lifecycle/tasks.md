@@ -25,14 +25,18 @@ Mechanism: **Option A** — hold the NAR download lock through the eager-CDC chu
 - [x] 5.1 The "contend → `pollForDownloadOrTakeOver` → `markStagingRequested` → serve from staging" path is already shipped and tested by #1374/#1375; with D1 holding the lock through chunking, a mid-chunking cross-pod reader takes exactly that path. The unit pieces (lock held: 2.1; producer stages a mid-chunking request: 4.1) compose it; the full cross-pod composition is the e2e (6.1).
 - [x] 5.2 Dead-orphan recovery untouched: D1 changes only download-lock release timing for a live eager chunk; `narServability`/#1230 logic is unmodified and its tests pass in the full suite.
 
-## 6. End-to-end
+## 5b. Guard A — compressed request from uncompressed staging (added after the e2e)
 
-- [ ] 6.1 Re-enable / extend the chunking-window e2e (`dev-scripts/test-cdc-lifecycle-e2e.py` and/or `test-inflight-staging-contention-e2e.py`) for 2 replicas + Redis locker + eager CDC, with a slow-chunk knob: a cross-pod compressed request mid-chunking serves HTTP 200 from staging, no 404. Green on both local and S3 backends.
-- [ ] 6.2 Run the download-window contention e2e to confirm no regression in the already-green pre-chunking path.
+- [x] 5b.1 `serveNarFromStaging` gained a `requested` compression param + `compressedRequestNeedsUpstreamFallback` helper: returns `storage.ErrNotFound` when a compressed variant is requested but staging holds uncompressed bytes (eager-CDC), so the client falls back to upstream instead of being served a mislabeled body. Tests: `TestServeNarFromStaging_CompressedRequestFromUncompressedStagingFallsBack`. Commit `d77881bc`.
+
+## 6. End-to-end — RED, root fix deferred
+
+- [ ] 6.1 The contention e2e (`dev-scripts/test-inflight-staging-contention-e2e.py --window chunking`, xz upstream) is RED: it expects the `.nar.xz` request served from staging, but for eager CDC that is unachievable — the in-flight bytes are uncompressed and ncps has no NAR compressor. The e2e's chunking-window expectation must be redesigned (test a none-upstream NAR for staging-serves-uncompressed; expect compressed→fallback). DEFERRED with the narinfo-`none` root fix — see memory `project_cdc_narinfo_none_root_fix`.
+- [ ] 6.2 Same-pod temp path has the identical pre-existing corruption; a guard there was reverted (breaks the deliberate `cdc_test.go:676`). DEFERRED to the root-fix session.
 
 ## 7. Finalize
 
-- [ ] 7.1 `task fmt`, `task lint`, `task test` all exit 0 under the race detector.
-- [ ] 7.2 Add a `CHANGELOG.md` [Unreleased] entry for the CDC chunking-window cross-pod 404 fix.
-- [ ] 7.3 Update docs only if operator-visible behavior changed (expected: none beyond existing inflight-staging docs); otherwise note "no doc change required".
-- [ ] 7.4 Update memory `project_cdc_staging_lock_lifecycle_change` with the final mechanism (Option A) and archive the change (`/opsx:archive`).
+- [x] 7.1 `task fmt`, `task lint`, unit `task test` all green under `-race` (the e2e is a separate opt-in dev tool, not in `nix flake check`).
+- [x] 7.2 `CHANGELOG.md` [Unreleased] entry added (corrected to: uncompressed cross-pod served from staging; compressed mid-chunking falls back to upstream).
+- [x] 7.3 No doc change required (behavior-only, behind the existing inflight-staging flag).
+- [x] 7.4 Memory updated: `project_cdc_staging_lock_lifecycle_change` (implementation) + `project_cdc_narinfo_none_root_fix` (deferred root fix). Archive after review/merge.
