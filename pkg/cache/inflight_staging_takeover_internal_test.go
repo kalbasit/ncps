@@ -41,7 +41,7 @@ func TestPollTakeover_DiscardsStaleStaging(t *testing.T) {
 	// first tick and the waiter takes over.
 	ds, tookOver := c.pollForDownloadOrTakeOver(
 		ctx, ctx, lockKey, hash, true, storage.ErrNotFound,
-		func(context.Context) bool { return false },
+		func(context.Context) (bool, bool) { return false, false },
 	)
 	require.True(t, tookOver, "an acquirable lock means the holder is gone: take over")
 	assert.Nil(t, ds)
@@ -107,7 +107,7 @@ func TestStagingTakeover_NoTruncatedServeAcrossDeath(t *testing.T) {
 	// "requested" so a persisting cross-pod waiter is re-served.
 	_, tookOver := c.pollForDownloadOrTakeOver(
 		ctx, ctx, lockKey, hash, true, storage.ErrNotFound,
-		func(context.Context) bool { return false },
+		func(context.Context) (bool, bool) { return false, false },
 	)
 	require.True(t, tookOver)
 	require.NoError(t, c.downloadLocker.Unlock(ctx, lockKey))

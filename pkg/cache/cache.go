@@ -4267,6 +4267,9 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 	)
 	defer span.End()
 
+	// A narinfo is never chunked, so "present" is also "finished": checkAsset
+	// returns the same value for both. Staging is off for narinfo, so the in-flight
+	// branches never fire here regardless.
 	return c.coordinateDownload(
 		ctx,
 		context.WithoutCancel(ctx),
@@ -4274,12 +4277,15 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		hash,
 		true,
 		false, // narinfo downloads are not staged (staging is NAR-only)
-		func(ctx context.Context) bool {
+		func(ctx context.Context) (bool, bool) {
+			var present bool
 			if _, err := c.getNarInfoFromDatabase(ctx, hash); err == nil {
-				return true
+				present = true
+			} else {
+				present = c.narInfoStore.HasNarInfo(ctx, hash)
 			}
 
-			return c.narInfoStore.HasNarInfo(ctx, hash)
+			return present, present
 		},
 		func(ds *downloadState) {
 			c.pullNarInfo(context.WithoutCancel(ctx), hash, ds)
@@ -4316,22 +4322,26 @@ func (c *Cache) prePullNar(
 		narURL.Hash,
 		false,
 		true, // NAR downloads may serve cross-pod waiters from in-flight staging
-		func(ctx context.Context) bool {
-			// A placeholder nar_file row (created by storeInDatabase before chunking
-			// starts, or left by a failed download) must NOT count as an available
-			// asset: otherwise coordinateDownload returns a completed state and skips
-			// the re-download, and streamProgressiveChunks waits 30s for chunks that
-			// never arrive, yielding a truncated NAR response. isServable is the single
-			// predicate gating this; see its doc comment.
-			servable, err := c.isServable(ctx, *narURL)
+		// checkAsset returns (servable, finished) in a single pass via narServability,
+		// so the poll loop never repeats the HasNarInStore stat + nar_file lookup.
+		//   - servable: a placeholder nar_file row (created by storeInDatabase before
+		//     chunking, or left by a failed download) must NOT count, else coordination
+		//     returns a completed state, skips the re-download, and streamProgressiveChunks
+		//     waits 30s for chunks that never arrive (a truncated NAR response).
+		//   - finished: only a whole-file-in-store or fully-chunked NAR. An actively-
+		//     chunking NAR is excluded so a cross-pod waiter serves it from in-flight
+		//     staging (transcoding) or progressive chunk streaming rather than chunk
+		//     serving, which 404s a compressed request.
+		func(ctx context.Context) (bool, bool) {
+			servable, finished, err := c.narServability(ctx, *narURL)
 			if err != nil {
 				zerolog.Ctx(ctx).Warn().Err(err).
 					Msg("error checking servability for download coordination; treating as cache miss")
 
-				return false
+				return false, false
 			}
 
-			return servable
+			return servable, finished
 		},
 		func(ds *downloadState) {
 			c.pullNarIntoStore(ctx, narURL, preferredUpstreamURL, uc, ds, narInfo)
@@ -4424,45 +4434,87 @@ func (c *Cache) cdcChunkerLive(ctx context.Context, hash string) bool {
 // helper so the placeholder regression (ncps #1255/#1263/#1279/#1290), which kept
 // recurring via divergent ad-hoc checks, cannot return.
 func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
+	servable, _, err := c.narServability(ctx, narURL)
+
+	return servable, err
+}
+
+// narServability is the single source of truth behind both isServable and
+// hasFinishedNar: it computes, in ONE pass, whether a NAR can be served right now
+// (servable) and whether it is fully materialized (finished). Having both
+// predicates delegate here keeps the servability logic from diverging — the
+// divergent ad-hoc checks that kept re-introducing the placeholder regression
+// (ncps #1255/#1263/#1279/#1290) — and lets a caller under contention (the
+// download-coordination poll loop) get both values without repeating the
+// HasNarInStore stat and the nar_file lookup.
+//
+//   - servable: a whole file in the store, OR (with CDC enabled) a nar_file that is
+//     fully chunked OR actively chunking with a live producer.
+//   - finished: a whole file in the store, OR a fully-chunked nar_file. An
+//     actively-chunking row (total_chunks == 0) is servable but NOT finished.
+//
+// The mere existence of a nar_file row NEVER makes a NAR servable: a backing-less
+// placeholder row (created by storeInDatabase at narinfo-fetch time, or left behind
+// by a failed download) is a cache miss that must trigger an upstream (re-)download,
+// never a terminal 404.
+func (c *Cache) narServability(ctx context.Context, narURL nar.URL) (servable, finished bool, err error) {
 	if c.HasNarInStore(ctx, narURL) {
-		return true, nil
+		return true, true, nil
 	}
 
 	if !c.isChunkStoreAvailable() {
-		return false, nil
+		return false, false, nil
 	}
 
 	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
 	if err != nil {
 		if database.IsNotFoundError(err) {
-			return false, nil
+			return false, false, nil
 		}
 
-		return false, fmt.Errorf("failed to look up nar_file record for servability: %w", err)
+		return false, false, fmt.Errorf("failed to look up nar_file record for servability: %w", err)
 	}
 
 	// Servability of an existing nar_file record:
-	//   - total_chunks > 0           → fully chunked, servable (no lock probe on this hot path).
+	//   - total_chunks > 0           → fully chunked: servable AND finished.
 	//   - chunking_started_at == nil → a bare placeholder (created at narinfo-fetch time or
 	//     left by a failed download), never servable; falls through to a re-download.
 	//   - otherwise (chunking in progress) → servable ONLY if a chunker is actually
-	//     producing its chunks. Liveness is the refreshed per-hash migration lock, NOT the
-	//     age of chunking_started_at (a one-time write): the download-path chunker holds
-	//     migrationLockKey(hash) for the whole operation, so a FREE lock means the producer
-	//     died mid-chunking (issue #1230) and the row is a dead orphan — routing GetNar into
-	//     getNarFromChunks would commit 200 + partial chunks then stall maxWaitPerChunk on a
-	//     chunk that never arrives ("Truncated zstd input"), so report it not-servable and
-	//     let GetNar re-download cleanly. A HELD lock keeps the row servable even for a chunk
-	//     running longer than cdcChunkingLockTTL, so peers piggyback on the live producer.
+	//     producing its chunks, and never finished. Liveness is the refreshed per-hash
+	//     migration lock, NOT the age of chunking_started_at (a one-time write): the
+	//     download-path chunker holds migrationLockKey(hash) for the whole operation, so a
+	//     FREE lock means the producer died mid-chunking (issue #1230) and the row is a dead
+	//     orphan — routing GetNar into getNarFromChunks would commit 200 + partial chunks then
+	//     stall maxWaitPerChunk on a chunk that never arrives ("Truncated zstd input"), so
+	//     report it not-servable and let GetNar re-download cleanly. A HELD lock keeps the row
+	//     servable even for a chunk running longer than cdcChunkingLockTTL, so peers piggyback.
 	if nr.TotalChunks > 0 {
-		return true, nil
+		return true, true, nil
 	}
 
 	if nr.ChunkingStartedAt == nil {
-		return false, nil
+		return false, false, nil
 	}
 
-	return c.cdcChunkerLive(ctx, narURL.Hash), nil
+	return c.cdcChunkerLive(ctx, narURL.Hash), false, nil
+}
+
+// hasFinishedNar reports whether the NAR is FULLY materialized as a static asset —
+// a whole file in the store, or a fully-chunked nar_file (total_chunks > 0). Unlike
+// isServable it deliberately does NOT count an actively-chunking row (chunking in
+// progress, total_chunks == 0) as ready.
+//
+// The download-coordination poll loop uses this for its "asset appeared, served by
+// peer" fast path. isServable conflates "finished" with "actively chunking", so
+// using it there would let a lock-losing waiter treat an in-flight chunked NAR as a
+// finished asset and route to chunk-based serving — which 404s a compressed request
+// because chunks are stored decompressed. Splitting the finished check out lets the
+// actively-chunking case fall through to in-flight staging (which transcodes) or, with
+// no staging, to progressive chunk streaming. Returns false on any lookup error.
+func (c *Cache) hasFinishedNar(ctx context.Context, narURL nar.URL) bool {
+	_, finished, _ := c.narServability(ctx, narURL)
+
+	return finished
 }
 
 // narFileBytesStored reports whether the shared database records this NAR's bytes
@@ -6320,7 +6372,7 @@ func (c *Cache) coordinateDownload(
 	hash string,
 	waitForStorage bool,
 	allowStaging bool,
-	hasAsset func(context.Context) bool,
+	checkAsset func(context.Context) (servable, finished bool),
 	startJob func(*downloadState),
 ) *downloadState {
 	// First check local jobs to avoid blocking on distributed lock if already downloading locally
@@ -6365,7 +6417,9 @@ func (c *Cache) coordinateDownload(
 		// Another server holds the lock. Rather than dead-ending in an HTTP 500,
 		// poll storage for the asset while periodically re-attempting lock
 		// acquisition so we can take over if the holder finishes or fails.
-		ds, tookOver := c.pollForDownloadOrTakeOver(coordCtx, ctx, lockKey, hash, allowStaging, err, hasAsset)
+		ds, tookOver := c.pollForDownloadOrTakeOver(
+			coordCtx, ctx, lockKey, hash, allowStaging, err, checkAsset,
+		)
 		if !tookOver {
 			return ds
 		}
@@ -6392,7 +6446,7 @@ func (c *Cache) coordinateDownload(
 	}
 
 	// Double check local jobs and asset presence under lock
-	if hasAsset(ctx) {
+	if servable, _ := checkAsset(ctx); servable {
 		stopRefresher()
 
 		// Release the lock before returning
@@ -6512,7 +6566,7 @@ func (c *Cache) pollForDownloadOrTakeOver(
 	hash string,
 	allowStaging bool,
 	initialErr error,
-	hasAsset func(context.Context) bool,
+	checkAsset func(context.Context) (servable, finished bool),
 ) (*downloadState, bool) {
 	const pollInterval = 200 * time.Millisecond
 
@@ -6543,7 +6597,20 @@ func (c *Cache) pollForDownloadOrTakeOver(
 	for {
 		select {
 		case <-ticker.C:
-			if hasAsset(coordCtx) {
+			// One combined check per tick yields both servability states without
+			// repeating the HasNarInStore stat and nar_file lookup (see narServability).
+			servable, finished := checkAsset(coordCtx)
+
+			// (A) The NAR is FULLY materialized (a whole file in the store, or a
+			// fully-chunked nar_file): serve it directly. Checked before takeover so a
+			// finished asset whose holder already released its lock is served rather
+			// than redundantly re-downloaded, and before staging so the committed final
+			// asset is preferred over staging parts. `finished` (NOT `servable`) is used
+			// here on purpose: an actively-chunking NAR is still in-flight and must fall
+			// through to staging (C) or progressive streaming (D), never be treated as a
+			// finished asset — which would route to chunk serving and 404 a compressed
+			// request (see narServability / cache.go serveFromChunks).
+			if finished {
 				zerolog.Ctx(ctx).Debug().
 					Str("hash", hash).
 					Msg("asset appeared in storage while polling (downloaded by another server)")
@@ -6609,6 +6676,32 @@ func (c *Cache) pollForDownloadOrTakeOver(
 
 					return ds, false
 				}
+			}
+
+			// (D) The holder is alive and the NAR is in-flight, but it is not yet a
+			// finished asset (A) and no staging parts are available (C). `servable` is
+			// true here only for an actively-chunking nar_file with a live producer
+			// (the finished case was handled by (A), so total_chunks==0 + chunker
+			// live). Return a completed served-by-peer state so GetNar routes into
+			// getNarFromChunks → streamProgressiveChunks and streams the NAR as the
+			// holder commits chunks. This preserves the no-staging progressive-CDC path;
+			// it does not fire for a plain in-flight download (servable false), which
+			// keeps polling for completion or staging as before.
+			if servable {
+				zerolog.Ctx(ctx).Debug().
+					Str("hash", hash).
+					Msg("peer is actively chunking; routing to progressive chunk streaming")
+
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "served_by_peer")))
+
+				ds := newDownloadState()
+				ds.closed = true
+				ds.startOnce.Do(func() { close(ds.start) })
+				ds.storedOnce.Do(func() { close(ds.stored) })
+				ds.doneOnce.Do(func() { close(ds.done) })
+
+				return ds, false
 			}
 		case <-deadlineCtx.Done():
 			ds := newDownloadState()
