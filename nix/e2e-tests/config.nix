@@ -339,9 +339,12 @@ rec {
     # Local-only phase scenarios (driven by the unified e2e harness)
     # ====================================================================
 
-    # 14. Single instance driven through the CDC lifecycle locally. `phase`
-    #     and `modes` are harness-only keys (ignored by generateValues); CDC
-    #     boots OFF and the phase driver toggles it across the lifecycle.
+    # 14. Single instance driven through the CDC lifecycle. `phase` and `modes`
+    #     are harness-only keys (ignored by generateValues); CDC boots OFF and
+    #     the phase driver toggles it across the lifecycle. Runs in both modes:
+    #     the KubernetesDeployment adapter runs the same driver on Kind, reading
+    #     the in-pod sqlite DB via a `kubectl debug` sidecar (the image is
+    #     shell-less). See change e2e-kubernetes-deployment-adapter.
     {
       name = "cdc-lifecycle";
       description = "Single instance driven through the CDC lifecycle (non-CDC->CDC->drain->non-CDC)";
@@ -349,7 +352,10 @@ rec {
       mode = null;
       migration.mode = "initContainer";
       phase = "cdc-lifecycle";
-      modes = [ "local" ];
+      modes = [
+        "local"
+        "kubernetes"
+      ];
       storage = {
         type = "local";
         local = {
@@ -369,8 +375,19 @@ rec {
     }
 
     # 15. Multi-replica contention driving in-flight NAR staging (download +
-    #     chunking windows). Local-only: the harness races concurrent same-NAR
-    #     fetches across replicas, which the k8s permutations do not.
+    #     chunking windows). Local-only: in-flight staging *activation* is a
+    #     single-shot timing event (a cross-pod waiter must hit ncps while the
+    #     lock-holder is mid-download, before the NAR is cached). The
+    #     KubernetesDeployment adapter reaches replicas via `kubectl
+    #     port-forward`, whose per-request latency jitter de-synchronizes the
+    #     thundering-herd race so the holder caches the NAR before waiters
+    #     contend — activation does not reliably fire on Kind. Serving
+    #     correctness IS covered (k8s permutations + cdc-lifecycle); the
+    #     contention/activation assertion needs the tight localhost timing, so
+    #     this scenario stays local-only. (The adapter still implements every
+    #     seam this scenario uses — per-pod addressing, read_state with
+    #     inflight_staging, clean_restart — so it can be lifted later if the race
+    #     is made deterministic.) See change e2e-kubernetes-deployment-adapter.
     {
       name = "staging-contention";
       description = "Multi-replica contention driving in-flight NAR staging (download + chunking windows)";

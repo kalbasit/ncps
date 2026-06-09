@@ -118,9 +118,42 @@ def _run_local(scenario, verbose: bool) -> int:
     return rc
 
 
-def _run_kubernetes(scenario, verbose: bool) -> int:
-    # Kubernetes mode delegates to the reused K8sTestsCLI + NCPSTester backend,
-    # which already validates serve and CDC-lifecycle topology in-cluster.
-    from kubernetes_mode import run_kubernetes_scenario
+# Catalog scenarios that run their full phase driver through the
+# KubernetesDeployment adapter (so the *same* driver body executes on Kind),
+# rather than the NCPSTester serve/topology validation. Gated by name, NOT by
+# phase: `ha-s3-postgres-cdc-lifecycle` also has phase "cdc-lifecycle" but is a
+# multi-replica permutation whose cross-replica topology checks belong to
+# NCPSTester, so it must NOT be routed here. `staging-contention` is listed for
+# completeness — it is pinned `local`-only, so it SKIPs before reaching this.
+_ADAPTER_SCENARIOS = ("cdc-lifecycle", "staging-contention")
 
-    return run_kubernetes_scenario(scenario, verbose=verbose)
+
+def _run_kubernetes(scenario, verbose: bool) -> int:
+    # The single-instance / external-secret / HA permutations keep the proven
+    # K8sTestsCLI + NCPSTester backend (serve + CDC-lifecycle topology). The
+    # explicitly-lifted phase-driver scenarios run the shared driver through the
+    # adapter instead.
+    if scenario.name not in _ADAPTER_SCENARIOS:
+        from kubernetes_mode import run_kubernetes_scenario
+
+        return run_kubernetes_scenario(scenario, verbose=verbose)
+
+    from kubernetes_deployment import KubernetesDeployment
+
+    deployment = KubernetesDeployment(scenario)
+    phase = get_phase(scenario.phase)
+    rc = 0
+    try:
+        deployment.provision()
+        phase(deployment, scenario)
+        section(f"PASS {scenario.name} [kubernetes]")
+        log(f"PASS {scenario.name} [kubernetes]", G)
+    except AssertionFailure as e:
+        log(f"FAIL {scenario.name} [kubernetes]: {e}", R)
+        rc = 1
+    except Exception as e:  # noqa: BLE001 — surface any error as a run failure
+        log(f"ERROR {scenario.name} [kubernetes]: {e}", R)
+        rc = 1
+    finally:
+        deployment.teardown()
+    return rc
