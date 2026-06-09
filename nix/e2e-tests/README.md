@@ -75,8 +75,29 @@ To **add a scenario**, add a permutation entry to `config.nix`. The Kubernetes
   run is a FAILURE) and every reader is byte-identical, across the download
   (CDC off) and chunking (CDC on) windows.
 
-In `kubernetes` mode the harness reuses the in-cluster `NCPSTester` validation
-(serve + CDC-lifecycle topology checks).
+In `kubernetes` mode the plain storage×DB / external-secret / HA permutations
+reuse the in-cluster `NCPSTester` validation (serve + CDC-lifecycle topology
+checks). The `cdc-lifecycle` **phase-driver** scenario instead runs the *same*
+phase driver through a `KubernetesDeployment` adapter, so it is no longer
+`local`-only:
+
+- The adapter reaches each replica via a per-pod `kubectl port-forward` and
+  writes run.py's `state.json` shape so `seed_cache` builds through the cluster
+  ncps.
+- CDC is toggled with `helm upgrade --set config.cdc.enabled=… --set config.cdc.lazyChunkingEnabled=…` + `kubectl rollout restart`.
+- DB invariants are read in-cluster: postgres/mysql via a port-forward, and
+  **sqlite via a `kubectl debug` sidecar** that shares the ncps container's PID
+  namespace and reads the live DB at `/proc/1/root` (the ncps image is
+  shell-less, so the file can't be read from the ncps container itself). During
+  the drain window (ncps scaled to 0) sqlite is read from a transient pod that
+  mounts the released storage PVC, and `migrate-chunks-to-nar` runs in a one-shot
+  pod cloned from the resolved pod spec.
+
+`staging-contention` stays **`local`-only** (it SKIPs under `--mode kubernetes`):
+the adapter supports every seam it needs, but in-flight staging *activation* is a
+single-shot timing event that `kubectl port-forward` latency jitter
+de-synchronizes, so activation cannot be reliably forced on Kind. The adapter is
+ready to lift it later if the race is made deterministic.
 
 ## CI
 
@@ -115,7 +136,8 @@ nix/e2e-tests/
   tests/                 fast offline unit tests (checks.e2e-harness-unit)
     deployment.py        the mode-adapter Protocol
     local.py             LocalDeployment (run.py)
-    kubernetes_mode.py   Kubernetes mode (delegates to the backend below)
+    kubernetes_deployment.py  KubernetesDeployment (phase drivers on Kind)
+    kubernetes_mode.py   Kubernetes mode for plain permutations (NCPSTester)
     k8s_tests.py         Kind/Helm backend (cluster, image, install)
     k8s_tests_tester.py  in-cluster NCPSTester validation
     deps.py              fixed-port `nix run .#deps` lifecycle

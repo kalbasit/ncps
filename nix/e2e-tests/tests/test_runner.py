@@ -35,6 +35,105 @@ def _patch(monkeypatch, statuses):
     monkeypatch.setattr(runner, "_execute", fake_execute)
 
 
+def test_run_kubernetes_routes_phase_drivers_through_adapter(monkeypatch):
+    """cdc-lifecycle / staging-contention run via KubernetesDeployment, not NCPSTester."""
+    calls = {"adapter": 0, "ncps_tester": 0, "torn_down": False}
+
+    class _FakeDeployment:
+        def __init__(self, scenario):
+            calls["adapter"] += 1
+
+        def provision(self):
+            pass
+
+        def teardown(self):
+            calls["torn_down"] = True
+
+    monkeypatch.setattr(
+        runner, "get_phase", lambda name: (lambda dep, sc: None)
+    )
+    import kubernetes_deployment
+
+    monkeypatch.setattr(
+        kubernetes_deployment, "KubernetesDeployment", _FakeDeployment
+    )
+
+    @dataclass
+    class _PhaseScenario:
+        name: str
+        phase: str
+        modes: List[str]
+
+        def supports(self, mode):
+            return mode in self.modes
+
+    rc = runner._run_kubernetes(
+        _PhaseScenario("staging-contention", "staging-contention", ["kubernetes"]),
+        verbose=False,
+    )
+    assert rc == 0
+    assert calls["adapter"] == 1, "adapter constructed for phase-driver scenario"
+    assert calls["torn_down"], "teardown always called"
+    assert calls["ncps_tester"] == 0
+
+
+def test_run_kubernetes_keeps_ncps_tester_for_plain_permutations(monkeypatch):
+    """serve permutations still use the K8sTestsCLI + NCPSTester backend."""
+    seen = {"ncps_tester": 0}
+    import kubernetes_mode
+
+    monkeypatch.setattr(
+        kubernetes_mode,
+        "run_kubernetes_scenario",
+        lambda scenario, verbose=False: seen.__setitem__("ncps_tester", 1) or 0,
+    )
+
+    @dataclass
+    class _ServeScenario:
+        name: str
+        phase: str
+        modes: List[str]
+
+        def supports(self, mode):
+            return mode in self.modes
+
+    rc = runner._run_kubernetes(
+        _ServeScenario("single-s3-postgres", "serve", ["kubernetes"]), verbose=False
+    )
+    assert rc == 0
+    assert seen["ncps_tester"] == 1, "plain permutation routed to NCPSTester"
+
+
+def test_run_kubernetes_ha_cdc_lifecycle_stays_on_ncps_tester(monkeypatch):
+    """A multi-replica permutation that shares the cdc-lifecycle PHASE but is not
+    an explicitly-lifted scenario keeps NCPSTester's topology checks (gated by
+    name, not phase)."""
+    seen = {"ncps_tester": 0}
+    import kubernetes_mode
+
+    monkeypatch.setattr(
+        kubernetes_mode,
+        "run_kubernetes_scenario",
+        lambda scenario, verbose=False: seen.__setitem__("ncps_tester", 1) or 0,
+    )
+
+    @dataclass
+    class _HaScenario:
+        name: str
+        phase: str
+        modes: List[str]
+
+        def supports(self, mode):
+            return mode in self.modes
+
+    rc = runner._run_kubernetes(
+        _HaScenario("ha-s3-postgres-cdc-lifecycle", "cdc-lifecycle", ["kubernetes"]),
+        verbose=False,
+    )
+    assert rc == 0
+    assert seen["ncps_tester"] == 1, "HA cdc-lifecycle permutation routed to NCPSTester, not the adapter"
+
+
 def test_all_selects_every_scenario(monkeypatch):
     seen = []
     monkeypatch.setattr(runner, "load_catalog", _fake_catalog)
