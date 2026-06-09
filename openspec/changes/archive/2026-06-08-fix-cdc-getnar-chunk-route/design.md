@@ -2,7 +2,7 @@
 
 `Cache.GetNar` (cache.go ~1200-1245) decides whether to serve immediately or coordinate a download:
 
-```
+```go
 hasNar, _ := c.isServable(ctx, narURL)            // true for in-store, fully-chunked, OR actively-chunking-live
 if hasActiveLocalJob && !hasNarInStore {           // holder path: prefer temp-file streaming
     hasNar, _ = c.HasNarInChunks(ctx, narURL)
