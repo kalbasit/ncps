@@ -1064,6 +1064,20 @@ func (c *Cache) isChunkStoreAvailable() bool {
 	return c.chunkStore != nil
 }
 
+// isEagerCDC reports whether the cache is in eager CDC mode: CDC writes enabled
+// (chunk store present) AND lazy chunking disabled. This is the gate for
+// predictive narinfo-none advertisement — see maybeCDCNormalizeNarInfoURL and the
+// store-time normalization switch. Lazy CDC is deliberately excluded: it retains
+// the whole upstream-compressed file and serves .nar.xz correctly, so advertising
+// none for it would mis-serve. All three fields are read under one lock so the
+// predicate cannot observe a torn eager/lazy transition.
+func (c *Cache) isEagerCDC() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcEnabled && c.chunkStore != nil && !c.cdcLazyChunkingEnabled
+}
+
 func (c *Cache) getChunkStore() chunk.Store {
 	c.cdcMu.RLock()
 	defer c.cdcMu.RUnlock()
@@ -4115,6 +4129,27 @@ func (c *Cache) pullNarInfo(
 		// still be re-fetched from upstream after the local copy is evicted.
 		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression, Query: narURL.Query}
 		narInfo.URL = rewrittenURL.String()
+	case c.isEagerCDC():
+		// Eager CDC: advertise Compression: none predictively so clients always
+		// request the uncompressed nar/<hash>.nar. The durable form under eager CDC
+		// is uncompressed chunks, ncps has no NAR compressor, and a re-compressed
+		// file would not match FileHash/FileSize — so a .nar.xz request cannot be
+		// served correctly during the chunking window. This mirrors PutNarInfo,
+		// which already normalizes CDC narinfos to none on the upload path.
+		//
+		// This reverses the earlier "persist the truthful xz URL until chunked"
+		// stance. It is safe because narServability routes a .nar request for
+		// not-yet-materialized bytes to an upstream re-download (never a terminal
+		// 404), and in-flight staging serves the uncompressed bytes across the
+		// pull+chunk window. Lazy CDC is excluded (isEagerCDC gates on !lazy): it
+		// keeps the whole xz file servable as .nar.xz until migration completes.
+		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		narInfo.Compression = nar.CompressionTypeNone.String()
+		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
+
+		// Set the FileHash and FileSize to null, not required for compression=none.
+		narInfo.FileHash = nil
+		narInfo.FileSize = 0
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -8234,11 +8269,20 @@ func derefInt64Ptr(p *int64) int64 {
 }
 
 // maybeCDCNormalizeNarInfoURL normalizes the narinfo URL and Compression in-memory
-// when CDC is enabled and the NAR has already been migrated to chunks. Without this,
-// there is a race window where GetNarInfo returns "Compression: xz" but GetNar serves
-// uncompressed data from chunks — causing Nix to fail with "input compression not
-// recognized". The DB update happens asynchronously via migrateNarToChunksCleanup;
-// this call makes the in-flight response correct immediately.
+// to none. Without this, there is a race window where GetNarInfo returns
+// "Compression: xz" but GetNar serves uncompressed data from chunks — causing Nix
+// to fail with "input compression not recognized". The DB update (when any)
+// happens asynchronously; this call makes the in-flight response correct
+// immediately. The gate depends on the CDC mode:
+//
+//   - Eager CDC: normalize PREDICTIVELY, regardless of HasNarInChunks. The durable
+//     form is uncompressed chunks and a .nar.xz request cannot be served during the
+//     chunking window, so clients must always be steered to .nar. This is the
+//     serve-time backstop for legacy rows still persisted as xz (store-time
+//     normalization handles freshly-pulled rows).
+//   - Lazy CDC / drain (chunk store present but not eager): normalize ONLY once the
+//     NAR is genuinely chunked (HasNarInChunks), because the whole upstream-
+//     compressed file is still servable as .nar.xz until migration completes.
 func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL, narInfo *narinfo.NarInfo) {
 	if !c.isChunkStoreAvailable() {
 		return
@@ -8251,9 +8295,11 @@ func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL,
 		return
 	}
 
-	hasChunks, err := c.HasNarInChunks(ctx, normalizedURL)
-	if err != nil || !hasChunks {
-		return
+	if !c.isEagerCDC() {
+		hasChunks, err := c.HasNarInChunks(ctx, normalizedURL)
+		if err != nil || !hasChunks {
+			return
+		}
 	}
 
 	noneURL := nar.URL{Hash: normalizedURL.Hash, Compression: nar.CompressionTypeNone, Query: normalizedURL.Query}

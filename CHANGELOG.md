@@ -107,6 +107,21 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Eager-CDC narinfos are now advertised as `Compression: none` predictively.**
+  Under eager CDC the durable form of a NAR is its uncompressed chunk sequence, and
+  ncps has no NAR compressor — so a `.nar.xz` request during the chunking window
+  could not be served correctly (it 404'd to upstream fallback, or worse served
+  decompressed bytes mislabeled as `xz`). ncps now advertises `Compression: none` /
+  `nar/<hash>.nar` for eager-CDC NARs consistently — at narinfo store time on the
+  pull path **and** at serve time — so clients always request the uncompressed
+  `.nar` and never `.nar.xz`, eliminating the corruption at its source. This brings
+  the pull path into parity with `PutNarInfo` (uploads already normalize CDC
+  narinfos to `none`). It is scoped strictly to eager CDC: **lazy** CDC keeps the
+  whole upstream-compressed file and continues to serve `.nar.xz` until the NAR is
+  genuinely chunked. A `.nar` request for not-yet-materialized bytes re-downloads
+  from upstream (recovering the original compression via the upstream narinfo)
+  rather than 404-ing. (#660, #1289)
+
 - **Cross-pod NAR serving during the eager-CDC chunking window.** With CDC and HA
   (replicas > 1), the NAR download lock was released as soon as the raw bytes were
   stored (chunk start), so a cross-pod reader could acquire the now-free lock

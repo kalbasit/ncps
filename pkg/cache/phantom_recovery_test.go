@@ -49,8 +49,9 @@ func testCDCBackingLessRecordRecoversAfterTransientFailure(factory cacheFactory)
 		require.NoError(t, err)
 		c.SetChunker(realChunker)
 
-		// Serve real xz bytes for the NAR. The narinfo advertises the xz URL, so a
-		// healthy GetNar serves these bytes as-is; xzContent is the full reference.
+		// Serve real xz bytes upstream. Under eager CDC the narinfo advertises a
+		// predictive none URL, so GetNar re-downloads the xz, decompresses it, and
+		// serves the uncompressed payload — originalContent is the full reference.
 		originalContent := testhelper.MustRandString(50160)
 		xzContent := compressXz(t, originalContent)
 		narXzPath := "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
@@ -92,12 +93,11 @@ func testCDCBackingLessRecordRecoversAfterTransientFailure(factory cacheFactory)
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
-		// Address the NAR via exactly what the narinfo advertises. With store-time
-		// CDC normalization removed, a not-yet-chunked eager-CDC narinfo truthfully
-		// advertises its upstream (xz) URL rather than a predicted none URL. The
-		// phantom-recovery invariant (a backing-less row re-downloads from upstream
-		// and never terminal-404s) holds regardless of which compression the URL
-		// names.
+		// Address the NAR via exactly what the narinfo advertises. Under eager CDC,
+		// store-time normalization advertises a predictive none URL, so this is
+		// nar/<hash>.nar. The phantom-recovery invariant (a backing-less row
+		// re-downloads from upstream and never terminal-404s) holds regardless of
+		// which compression the URL names.
 		narURL, err := nar.ParseURL(ni.URL)
 		require.NoError(t, err)
 
@@ -120,17 +120,17 @@ func testCDCBackingLessRecordRecoversAfterTransientFailure(factory cacheFactory)
 		_, _, rc, err = c.GetNar(context.Background(), narURL)
 		require.NoError(t, err, "backing-less record must re-download once upstream recovers")
 
-		// The narinfo advertises the xz URL, so GetNar serves the NAR exactly as
-		// upstream delivers it: the full xz-compressed bytes, served as-is. Assert
-		// the body matches the complete xzContent (exact bytes and length) so a
+		// The narinfo advertises the predictive none URL, so GetNar decompresses the
+		// re-downloaded xz and serves the full uncompressed payload. Assert the body
+		// matches the complete originalContent (exact bytes and length) so a
 		// truncated re-download cannot pass.
 		body, err := io.ReadAll(rc)
 		require.NoError(t, err)
 		require.NoError(t, rc.Close())
-		require.Len(t, body, len(xzContent),
-			"recovered NAR must be the full, non-truncated upstream payload")
-		assert.Equal(t, xzContent, string(body),
-			"recovered NAR body must be the full upstream xz payload")
+		require.Len(t, body, len(originalContent),
+			"recovered NAR must be the full, non-truncated decompressed payload")
+		assert.Equal(t, originalContent, string(body),
+			"recovered NAR body must be the full decompressed payload")
 
 		// The record is now healed: a subsequent request is served from cache.
 		_, _, rc, err = c.GetNar(context.Background(), narURL)
@@ -139,9 +139,9 @@ func testCDCBackingLessRecordRecoversAfterTransientFailure(factory cacheFactory)
 		body, err = io.ReadAll(rc)
 		require.NoError(t, err)
 		require.NoError(t, rc.Close())
-		require.Len(t, body, len(xzContent),
+		require.Len(t, body, len(originalContent),
 			"healed NAR must continue to serve the full, non-truncated payload")
-		assert.Equal(t, xzContent, string(body),
+		assert.Equal(t, originalContent, string(body),
 			"healed NAR must continue to serve the full content from cache")
 	}
 }

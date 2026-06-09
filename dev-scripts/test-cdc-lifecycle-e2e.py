@@ -556,6 +556,18 @@ def phase_cdc_eager(state, db, storage, sdir):
     # Narinfo normalization at serve: required fields present + consistent.
     check("URL" in fields and "Compression" in fields, "narinfo has URL+Compression")
     check("NarHash" in fields and "NarSize" in fields, "narinfo has NarHash+NarSize")
+    # Eager CDC advertises Compression: none PREDICTIVELY at store time, so a
+    # freshly-seeded eager NAR's narinfo is deterministically none / .nar — clients
+    # always request the uncompressed .nar and never .nar.xz. (Asserts the value,
+    # not just presence, so a regression to xz cannot pass silently.)
+    check(
+        fields["Compression"] == "none",
+        f"eager CDC narinfo advertises Compression: none (got {fields['Compression']!r})",
+    )
+    check(
+        fields["URL"].endswith(".nar") and not fields["URL"].endswith(".nar.xz"),
+        f"eager CDC narinfo URL is the uncompressed .nar (got {fields['URL']!r})",
+    )
 
     nar = fetch_nar_bytes(fields)
     check(len(nar) == int(fields["NarSize"]), "served NAR size matches narinfo NarSize")

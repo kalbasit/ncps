@@ -3144,7 +3144,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetPinnedClosureHashesSimple", testGetPinnedClosureHashesSimple(factory))
 	t.Run("LRUEvictionSkipsPinnedClosures", testLRUEvictionSkipsPinnedClosures(factory))
 	t.Run("GetNarInfo_CDCNormalizesCompressionWhenChunked", testGetNarInfoCDCNormalizesCompressionWhenChunked(factory))
-	t.Run("GetNarInfo_CDCNoNormalizationWhenNotChunked", testGetNarInfoCDCNoNormalizationWhenNotChunked(factory))
+	t.Run("GetNarInfo_CDCEagerNormalizesWhenNotChunked", testGetNarInfoCDCEagerNormalizesWhenNotChunked(factory))
 	t.Run("GetNarInfo_CDCDisabledNoNormalization", testGetNarInfoCDCDisabledNoNormalization(factory))
 	t.Run("GetNarInfo_DrainModeNormalizesChunkedNar", testGetNarInfoDrainModeNormalizesChunkedNar(factory))
 	t.Run("GetNar_CDCXzRequestReturnsErrWhenChunked", testGetNarCDCXzRequestReturnsErrWhenChunked(factory))
@@ -4224,10 +4224,13 @@ func testGetNarInfoCDCNormalizesCompressionWhenChunked(factory cacheFactory) fun
 	}
 }
 
-// testGetNarInfoCDCNoNormalizationWhenNotChunked verifies that GetNarInfo does NOT
-// normalize when CDC is enabled but the NAR has not yet been migrated to chunks.
-// The xz narinfo must be returned as-is so Nix can fetch the xz NAR file.
-func testGetNarInfoCDCNoNormalizationWhenNotChunked(factory cacheFactory) func(*testing.T) {
+// testGetNarInfoCDCEagerNormalizesWhenNotChunked verifies that under EAGER CDC
+// GetNarInfo normalizes the narinfo to none PREDICTIVELY even when the NAR is not
+// yet fully chunked (a placeholder nar_file row with TotalChunks=0). The durable
+// eager form is uncompressed chunks and a .nar.xz request cannot be served during
+// the chunking window, so clients must be steered to .nar. (Lazy CDC keeps the xz
+// URL until chunked — covered by TestGetNarInfo_LazyCDC_LegacyXzRowNotChunkedStaysXz.)
+func testGetNarInfoCDCEagerNormalizesWhenNotChunked(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -4274,10 +4277,10 @@ func testGetNarInfoCDCNoNormalizationWhenNotChunked(factory cacheFactory) func(*
 		ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		assert.Equal(t, xzURL.Compression.String(), ni.Compression,
-			"GetNarInfo should NOT normalize Compression when NAR is not yet fully chunked")
-		assert.Equal(t, xzURL.String(), ni.URL,
-			"GetNarInfo should NOT normalize URL when NAR is not yet fully chunked")
+		assert.Equal(t, nar.CompressionTypeNone.String(), ni.Compression,
+			"eager CDC must normalize Compression to none predictively, even mid-chunking")
+		assert.Equal(t, noneURL.String(), ni.URL,
+			"eager CDC must normalize URL to nar/<hash>.nar predictively, even mid-chunking")
 	}
 }
 
