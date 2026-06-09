@@ -31,9 +31,18 @@ class _Scenario:
 class _FakeProc:
     def __init__(self):
         self.terminated = False
+        self.killed = False
+        self.waited = False
 
     def terminate(self):
         self.terminated = True
+
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
+    def kill(self):
+        self.killed = True
 
 
 class _FakeCLI:
@@ -332,6 +341,7 @@ def test_sqlite_query_uses_reader_pod_when_scaled_to_zero():
 def test_db_postgres_builds_portforwarded_url():
     runner = _Recorder()
     dep, runner, procs, _ = _make(_Scenario(name="staging-contention", database="postgres"))
+    dep._wait_port_open = lambda *a, **k: None  # no real server in unit tests
     db = dep.db()
     assert db.dialect == "postgres"
     assert db.url.startswith("postgresql://ncps:s3cr3t@127.0.0.1:")
@@ -364,6 +374,8 @@ def test_sqlite_query_uses_debug_sidecar_and_proc_root():
     assert runner.find("debug", "--target", "ncps"), "kubectl debug sidecar created"
     # query copied the live DB from /proc/1/root
     assert any("/proc/1/root/storage/db/ncps.db" in " ".join(c) for c in runner.calls)
+    # clears stale wal/shm before copying (long-lived sidecar reuse)
+    assert any("rm -f /tmp/q.db" in " ".join(c) for c in runner.calls)
 
 
 # -- teardown ------------------------------------------------------------------
@@ -376,7 +388,10 @@ def test_teardown_closes_forwards_and_cleans_up():
     dep, runner, procs, _ = _make(runner=runner)
     dep.provision()
     dep.teardown()
-    assert all(p.terminated for p in procs if "port-forward" in p.args)
+    fwd_procs = [p for p in procs if "port-forward" in p.args]
+    assert fwd_procs and all(p.terminated for p in fwd_procs)
+    # forwards are reaped (waited on), not just signalled — no zombies
+    assert all(p.waited for p in fwd_procs)
     assert "cleanup:staging-contention" in dep._cli.calls
 
 

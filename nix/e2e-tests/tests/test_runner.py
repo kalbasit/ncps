@@ -53,9 +53,17 @@ def test_run_kubernetes_routes_phase_drivers_through_adapter(monkeypatch):
         runner, "get_phase", lambda name: (lambda dep, sc: None)
     )
     import kubernetes_deployment
+    import kubernetes_mode
 
     monkeypatch.setattr(
         kubernetes_deployment, "KubernetesDeployment", _FakeDeployment
+    )
+    # Wire the NCPSTester path so the assertion below is meaningful (would
+    # increment if the scenario wrongly fell through to NCPSTester).
+    monkeypatch.setattr(
+        kubernetes_mode,
+        "run_kubernetes_scenario",
+        lambda scenario, verbose=False: calls.__setitem__("ncps_tester", calls["ncps_tester"] + 1) or 0,
     )
 
     @dataclass

@@ -280,12 +280,36 @@ class KubernetesDeployment:
             inflight_staging=self.inflight_staging,
         )
 
+    @staticmethod
+    def _reap(proc) -> None:
+        """Terminate and reap a port-forward process so it leaves no zombie."""
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except (subprocess.TimeoutExpired, AttributeError):
+                proc.kill()
+                try:
+                    proc.wait()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _wait_port_open(self, port: int, timeout: int = 15) -> None:
+        """Wait until a local TCP port accepts connections (port-forward ready)."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    return
+            except OSError:
+                self._sleep(0.1)
+        raise RuntimeError(f"kubernetes: port-forward on {port} not ready in {timeout}s")
+
     def _close_forwards(self) -> None:
         for proc, _ in self._forwards:
-            try:
-                proc.terminate()
-            except Exception:
-                pass
+            self._reap(proc)
         self._forwards = []
 
     def replica_urls(self) -> List[str]:
@@ -474,7 +498,7 @@ class KubernetesDeployment:
                 ]
             )
             self._db_forward = (proc, local)
-            self._sleep(3)
+            self._wait_port_open(local)
         local = self._db_forward[1]
         db_name = f"ncps_{self.name.replace('-', '_')}"
         user = quote(c["username"])
@@ -512,22 +536,29 @@ class KubernetesDeployment:
             "--target", NCPS_CONTAINER, "-q",
         ]
         custom_file = None
-        if run_as:
-            overrides = {"securityContext": {"runAsUser": int(run_as)}}
-            import tempfile
+        try:
+            # Only pin runAsUser when the chart set a numeric one; otherwise the
+            # sidecar inherits the image default (root), matching a root-owned DB.
+            if run_as.isdigit():
+                overrides = {"securityContext": {"runAsUser": int(run_as)}}
+                import tempfile
 
-            fd, custom_file = tempfile.mkstemp(suffix=".json")
-            with os.fdopen(fd, "w") as fp:
-                json.dump(overrides, fp)
-            debug_cmd += ["--custom", custom_file]
-        debug_cmd += ["--", "sleep", "infinity"]
-        rc, out = self._kubectl(*debug_cmd, check=False, timeout=120)
-        log(f"kubernetes: sqlite debug sidecar (runAsUser={run_as or 'image-default'}): rc={rc}", G)
-        if custom_file:
-            try:
-                os.unlink(custom_file)
-            except OSError:
-                pass
+                fd, custom_file = tempfile.mkstemp(suffix=".json")
+                with os.fdopen(fd, "w") as fp:
+                    json.dump(overrides, fp)
+                debug_cmd += ["--custom", custom_file]
+            debug_cmd += ["--", "sleep", "infinity"]
+            rc, out = self._kubectl(*debug_cmd, check=False, timeout=120)
+            log(
+                f"kubernetes: sqlite debug sidecar (runAsUser={run_as or 'image-default'}): rc={rc}",
+                G,
+            )
+        finally:
+            if custom_file:
+                try:
+                    os.unlink(custom_file)
+                except OSError:
+                    pass
         # Wait for the ephemeral container to be running.
         deadline = time.time() + 90
         while time.time() < deadline:
@@ -584,8 +615,14 @@ class KubernetesDeployment:
         # The cp MUST succeed (a permission/owner mismatch here is the failure to
         # surface, not swallow — otherwise sqlite3 silently opens an empty DB and
         # every "no such table" error masquerades as a real row).
+        # Clear any prior copy first: the sidecar is long-lived and reused, so a
+        # stale -wal/-shm from a previous query (whose live counterpart has since
+        # been checkpointed away) would corrupt this read ("malformed disk
+        # image"). The -wal/-shm copies are best-effort because the live DB may
+        # legitimately have none.
         script = (
             "set -e; "
+            "rm -f /tmp/q.db /tmp/q.db-wal /tmp/q.db-shm; "
             f"cp /proc/1/root{db_path} /tmp/q.db; "
             f"cp /proc/1/root{db_path}-wal /tmp/q.db-wal 2>/dev/null || true; "
             f"cp /proc/1/root{db_path}-shm /tmp/q.db-shm 2>/dev/null || true; "
@@ -617,10 +654,7 @@ class KubernetesDeployment:
     def teardown(self) -> None:
         self._close_forwards()
         if self._db_forward is not None:
-            try:
-                self._db_forward[0].terminate()
-            except Exception:
-                pass
+            self._reap(self._db_forward[0])
             self._db_forward = None
         try:
             self._cli.cmd_cleanup(self.name)
