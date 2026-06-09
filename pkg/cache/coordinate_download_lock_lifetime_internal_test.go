@@ -10,10 +10,16 @@ import (
 
 // downloadLockFree reports whether the per-hash NAR download lock is currently
 // free. It probes with a non-blocking acquisition and immediately releases the
-// probe hold if it succeeds, so it never leaves the lock held.
-func downloadLockFree(c *Cache, key string) bool {
+// probe hold if it succeeds, so it never leaves the lock held. A TryLock error
+// (an unhealthy locker backend) is surfaced as a test failure rather than masked
+// as "not free", so a backend regression cannot make a lock-held assertion pass.
+// It uses assert (not require) so it is safe to call from the polling goroutines
+// of assert.Eventually / assert.Never, where FailNow must not be called.
+func downloadLockFree(t testing.TB, c *Cache, key string) bool {
+	t.Helper()
+
 	acquired, err := c.downloadLocker.TryLock(context.Background(), key, c.downloadLockTTL)
-	if err != nil {
+	if !assert.NoError(t, err, "probing the download lock must not error") {
 		return false
 	}
 
@@ -74,20 +80,20 @@ func TestCoordinateDownload_HoldsNARLockThroughChunking(t *testing.T) {
 	})
 
 	// In flight: the lock is held.
-	assert.False(t, downloadLockFree(c, key),
+	assert.False(t, downloadLockFree(t, c, key),
 		"download lock must be held while the download is in flight")
 
 	// Chunk start: ds.stored closes. The lock must stay held through chunking.
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
-	assert.Never(t, func() bool { return downloadLockFree(c, key) },
+	assert.Never(t, func() bool { return downloadLockFree(t, c, key) },
 		300*time.Millisecond, 15*time.Millisecond,
 		"download lock must stay held after ds.stored (through the eager-CDC chunking window)")
 
 	// Chunk complete: ds.done closes. The lock is released in the background.
 	ds.doneOnce.Do(func() { close(ds.done) })
 
-	assert.Eventually(t, func() bool { return downloadLockFree(c, key) },
+	assert.Eventually(t, func() bool { return downloadLockFree(t, c, key) },
 		2*time.Second, 15*time.Millisecond,
 		"download lock must be released after ds.done (chunking complete)")
 }
