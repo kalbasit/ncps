@@ -307,8 +307,9 @@ func serveCommand(
 				Value:   true,
 			},
 			&cli.BoolFlag{
-				Name:    "cache-require-trusted-signature",
-				Usage:   "Reject narinfos uploaded via PUT that do not carry a signature trusted by the configured upstream public keys (fail-closed). Default off.",
+				Name: "cache-require-trusted-signature",
+				Usage: "Reject narinfos uploaded via PUT that do not carry a signature trusted " +
+					"by the configured upstream public keys (fail-closed). Default off.",
 				Sources: flagSources("cache.require-trusted-signature", "CACHE_REQUIRE_TRUSTED_SIGNATURE"),
 				Value:   false,
 			},
