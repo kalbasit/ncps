@@ -17,12 +17,22 @@ task test:e2e -- --list
 nix run .#e2e -- --mode local --scenario cdc-lifecycle
 task test:e2e -- --mode local --scenario staging-contention
 
+# Run several scenarios in one invocation (repeatable and/or comma-separated).
+nix run .#e2e -- --mode local --scenario cdc-lifecycle --scenario staging-contention
+nix run .#e2e -- --mode local --scenario cdc-lifecycle,staging-contention
+
+# Run every scenario supporting the chosen mode (unsupported ones are SKIPPED).
+nix run .#e2e -- --mode local --all
+nix run .#e2e -- --mode kubernetes --all
+
 # Run a scenario on a Kind cluster (Helm chart).
 nix run .#e2e -- --mode kubernetes --scenario single-s3-postgres
 ```
 
 `task test:e2e` forwards `{{.CLI_ARGS}}` to `nix run .#e2e`; the two entrypoints
-are equivalent.
+are equivalent. `--all` and `--scenario` are mutually exclusive. A multi-scenario
+run reports each scenario as PASS/FAIL/SKIP, prints an aggregate summary, and
+exits non-zero if **any** scenario FAILED (a SKIP alone never fails the run).
 
 ## Modes
 
@@ -70,11 +80,27 @@ In `kubernetes` mode the harness reuses the in-cluster `NCPSTester` validation
 
 ## CI
 
-This harness is **manual / opt-in** and is intentionally **not** part of
-`nix flake check` (Kind and network-NAR scenarios far exceed the per-PR budget).
-A scenario may only be promoted into `nix flake check` if it is proven to run in
-under 3 minutes. Automated coverage, if wanted, belongs on a scheduled (nightly)
-workflow, not on pull requests.
+The harness **scenarios** are **manual / opt-in** and are intentionally **not**
+part of `nix flake check` (Kind and network-NAR scenarios far exceed the per-PR
+budget). A scenario may only be promoted into `nix flake check` if it is proven
+to run in under 3 minutes.
+
+The fast, offline **unit tests** for the harness CLI/runner logic
+([`tests/`](./tests)) *are* in `nix flake check` as `e2e-harness-unit` (and
+`task test:e2e:unit`); they never touch the network or a cluster.
+
+Automated scenario coverage runs on a **nightly** schedule, not on pull requests
+— [`.github/workflows/e2e-nightly.yml`](../../.github/workflows/e2e-nightly.yml):
+
+- Triggers on `schedule` (04:00 UTC) and manual `workflow_dispatch`. Never on PRs.
+- Runs the full catalog as a matrix over both modes (`--mode local --all` and
+  `--mode kubernetes --all`, Kind on the ubuntu runner), `fail-fast: false` so
+  one mode failing does not cancel the other.
+- **Commit dedup:** a `gate` job records the last successfully-tested `main` SHA
+  in an `actions/cache` key (`e2e-nightly-tested-<sha>`) and skips the run when
+  `main` has not advanced, so the same commit is never tested two nights running.
+  The SHA is recorded only after a fully successful run, so a failure retries on
+  the next schedule. `workflow_dispatch` bypasses the gate and forces a run.
 
 ## Layout
 
@@ -83,9 +109,10 @@ nix/e2e-tests/
   flake-module.nix       packages.e2e + apps.e2e (writeShellApplication)
   config.nix             scenario catalog (shared by both modes)
   src/
-    cli.py               argument parsing (--mode / --scenario / --list)
+    cli.py               argument parsing (--mode / --scenario / --all / --list)
     catalog.py           load + normalize config.nix
-    runner.py            select adapter, manage deps, run phase, report
+    runner.py            select adapter, manage deps, run phase(s), report
+  tests/                 fast offline unit tests (checks.e2e-harness-unit)
     deployment.py        the mode-adapter Protocol
     local.py             LocalDeployment (run.py)
     kubernetes_mode.py   Kubernetes mode (delegates to the backend below)
