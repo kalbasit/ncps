@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -233,4 +234,39 @@ func TestStageInflightNar_DisabledDoesNothing(t *testing.T) {
 
 	_, err = store.GetStagingPart(ctx, hash, 0)
 	assert.ErrorIs(t, err, storage.ErrNotFound)
+}
+
+// TestProduceStagingParts_NoOpWhenDownloadAlreadyCompleted verifies that when the
+// holder's temp file is already gone — the post-completion cleanup goroutine
+// (cache.go) removes ds.assetPath once the download and all readers finish — the
+// producer treats the missing temp file as a clean no-op rather than erroring.
+// This is the fast-download case the contention e2e surfaced: a cross-pod request
+// observed at completion led the producer to open an already-removed temp file.
+func TestProduceStagingParts_NoOpWhenDownloadAlreadyCompleted(t *testing.T) {
+	t.Parallel()
+
+	c, _, store, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	c.SetInflightStaging(true, 5*time.Minute, 4, true)
+
+	ctx := context.Background()
+
+	const hash = "aaaabbbbccccddddeeeeffff22223333"
+
+	// A path under the temp dir that was never created — exactly what the
+	// post-completion cleanup leaves behind once it removes ds.assetPath.
+	ds := newDownloadState()
+	ds.assetPath = filepath.Join(dir, "gone.nar")
+	ds.finalSize = 10
+	ds.startOnce.Do(func() { close(ds.start) })
+	ds.doneOnce.Do(func() { close(ds.done) })
+
+	err := c.produceStagingParts(ctx, hash, ds)
+	require.NoError(t, err,
+		"a missing temp file means the download already completed; staging must "+
+			"no-op, not error")
+
+	_, err = store.GetStagingPart(ctx, hash, 0)
+	assert.ErrorIs(t, err, storage.ErrNotFound, "no parts should be written on the no-op path")
 }

@@ -81,12 +81,14 @@ STAGING_ACTIVATION_LOG = (
 LOCK_CONTENTION_LOG = "failed to acquire download lock"
 PRODUCER_ERROR_LOG = "in-flight staging producer stopped with error"
 
-# Staging commits parts of the streamed NAR at the Go default part size (8 MiB),
-# so activation needs a NAR comfortably larger than that — enough parts must
-# commit while the holder is still downloading for a waiter to observe them.
-# nixpkgs#go (~216 MiB NAR) clears that bar with margin. Override with --package;
-# if staging does not activate, the run fails and suggests a larger package.
-DEFAULT_PACKAGE = "nixpkgs#go"
+# Activation needs the holder's NAR download to outlast a few staging-activation
+# poll ticks so a waiter's request is observed mid-download (and the streamed NAR
+# must exceed the 8 MiB part size so parts commit while downloading). The package
+# must also be substitutable from the configured upstream. nixpkgs#gcc-unwrapped
+# (~gcc, several-hundred-MiB NAR, Hydra-built on cache.nixos.org) clears both bars
+# and is verified to activate staging. Override with --package; if staging does
+# not activate, the run fails and suggests a larger package.
+DEFAULT_PACKAGE = "nixpkgs#gcc-unwrapped"
 
 # Colors
 G = "\033[0;32m"
@@ -120,6 +122,20 @@ def check(cond, msg):
 # ---------------------------------------------------------------------------
 
 
+def redact_url(url):
+    """Strip any userinfo/query (possible credentials) from a URL for logging."""
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        netloc = parts.hostname or ""
+        if parts.port:
+            netloc += f":{parts.port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except Exception:  # noqa: BLE001 — logging helper must never raise
+        return "<redacted>"
+
+
 def ports_for(replicas):
     return [BASE_PORT + i for i in range(replicas)]
 
@@ -147,9 +163,31 @@ def start_cluster(db, storage, replicas, log_path, *, cdc=False):
     ]
     if cdc:
         args.append("--enable-cdc")
+    # Optional upstream override. run.py defaults to cache.nixos.org, but a
+    # locally-realised package (the canonical reference) may be on the dev
+    # substituter and not yet on cache.nixos.org, which would 404 the narinfo.
+    # Point ncps at a substituter that has the package for a deterministic run:
+    #   NCPS_E2E_UPSTREAM_URL=https://ncps.example.com
+    #   NCPS_E2E_UPSTREAM_KEY=cache-name:base64key
+    upstream_url = os.environ.get("NCPS_E2E_UPSTREAM_URL")
+    upstream_key = os.environ.get("NCPS_E2E_UPSTREAM_KEY")
+    upstream_active = bool(upstream_url) and bool(upstream_key)
+    if bool(upstream_url) != bool(upstream_key):
+        # Partial config is almost always a mistake; surface it loudly rather than
+        # silently falling back to run.py's default upstream (a confusing failure).
+        log(
+            "WARNING: only one of NCPS_E2E_UPSTREAM_URL / NCPS_E2E_UPSTREAM_KEY is "
+            "set — both are required to override the upstream. Ignoring the partial "
+            "override and using run.py's default upstream.",
+            Y,
+        )
+    if upstream_active:
+        args += ["--cache-url", upstream_url, "--cache-public-key", upstream_key]
     log(
         f"start_cluster: db={db} storage={storage} replicas={replicas} "
-        f"cdc={cdc} locker=redis inflight-staging=on",
+        f"cdc={cdc} locker=redis inflight-staging=on"
+        # Redact any userinfo/query (possible credentials) before logging the URL.
+        + (f" upstream={redact_url(upstream_url)}" if upstream_active else ""),
         G,
     )
     f = open(log_path, "w", encoding="utf-8")
@@ -489,8 +527,9 @@ def run_phase(db, storage, replicas, clients, cdc, package, results_dir):
             elif contended:
                 hint = (
                     "a waiter lost the download lock but staging never engaged; the "
-                    "holder polls for waiters every 1s, so use a larger --package "
-                    "whose NAR download outlasts a few poll ticks"
+                    "holder polls for waiters periodically, so the NAR download must "
+                    "outlast a few poll ticks — use a larger --package (its compressed "
+                    "NAR download needs to take comfortably longer than a poll interval)"
                 )
             else:
                 hint = (
