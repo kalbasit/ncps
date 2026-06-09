@@ -1202,6 +1202,14 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
+		// requestedCompression is the compression the client originally asked for. The
+		// CDC serve path normalizes narURL.Compression to none below
+		// (lookupOriginalNarURL), so capture the original here to gate the in-flight
+		// serve paths: a compressed request that can only be served as uncompressed
+		// in-flight bytes (the eager-CDC chunking window) must 404 and fall back to an
+		// upstream that has the real compressed file, never serve a mislabeled body.
+		requestedCompression := narURL.Compression
+
 		hasNarInStore := c.HasNarInStore(ctx, narURL)
 
 		c.upstreamJobsMu.Lock()
@@ -1304,7 +1312,9 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 			var serveErr error
 
-			size, reader, serveErr = c.serveNarFromStaging(ctx, &narURL, ds.stagingServe.hash, ds.stagingServe.compression)
+			size, reader, serveErr = c.serveNarFromStaging(
+				ctx, &narURL, ds.stagingServe.hash, ds.stagingServe.compression, requestedCompression,
+			)
 			if serveErr != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			}
@@ -8383,7 +8393,10 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 			// stream when the staged bytes are decompressed (or non-zstd).
 			narURL.TransparentZstd = false
 
-			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression)
+			// This progressive-chunk path is reached only for uncompressed (none)
+			// requests; a compressed request 404s earlier in serveNarFromStorageViaPipe.
+			// Passing narURL.Compression keeps the fallback guard correct either way.
+			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression, narURL.Compression)
 		}
 	}
 

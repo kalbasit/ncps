@@ -233,12 +233,29 @@ func (m *stagingMultiReadCloser) Close() error {
 // client wants them uncompressed it transcodes on the fly, at parity with the
 // same-pod streaming path, and rewrites narURL.Compression to the compression
 // actually served. It returns size -1 because the length is not known up front.
+//
+// requested is the compression the client originally asked for (which the CDC serve
+// path normalizes away on narURL before this point). When the client wants a
+// compressed variant but the staged bytes are uncompressed — the eager-CDC chunking
+// window, where the in-flight temp is decompressed for chunking — the NAR cannot be
+// reconstructed in the requested compression (ncps has no NAR compressor, and a
+// re-compressed file would not match the narinfo's FileHash/FileSize). Such a request
+// returns storage.ErrNotFound so the client falls back to an upstream that still has
+// the original compressed file.
 func (c *Cache) serveNarFromStaging(
 	ctx context.Context,
 	narURL *nar.URL,
 	hash string,
 	staged nar.CompressionType,
+	requested nar.CompressionType,
 ) (int64, io.ReadCloser, error) {
+	if compressedRequestNeedsUpstreamFallback(requested, staged) {
+		return 0, nil, fmt.Errorf(
+			"staging serve: cannot produce %s NAR for %q from uncompressed staging: %w",
+			requested, hash, storage.ErrNotFound,
+		)
+	}
+
 	reader := c.newStagingPartReader(ctx, hash)
 
 	if !isNoneCompression(staged) && isNoneCompression(narURL.Compression) {
@@ -264,4 +281,16 @@ func (c *Cache) serveNarFromStaging(
 // explicit "none" type and the empty string (the staging_state default) count.
 func isNoneCompression(ct nar.CompressionType) bool {
 	return ct == nar.CompressionTypeNone || ct == nar.CompressionType("")
+}
+
+// compressedRequestNeedsUpstreamFallback reports whether a request for `requested`
+// compression cannot be satisfied from in-flight data that exists only as `available`
+// compression. ncps cannot compress a NAR (there is no NAR compressor, and a
+// re-compressed file would not match the narinfo's FileHash/FileSize), so a request
+// for a compressed variant backed only by uncompressed in-flight bytes — the eager-CDC
+// chunking window — must 404 and fall back to an upstream that has the original
+// compressed file. Decompression (compressed available, uncompressed requested) and
+// exact-match serving are always fine and are NOT flagged here.
+func compressedRequestNeedsUpstreamFallback(requested, available nar.CompressionType) bool {
+	return !isNoneCompression(requested) && isNoneCompression(available)
 }
