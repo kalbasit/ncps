@@ -242,13 +242,24 @@ def pick_backend(backends, counter):
     return backends[counter % len(backends)]
 
 
+def _is_safe_header(name, value):
+    """Reject header names/values containing CR or LF.
+
+    Forwarding a header that embeds CRLF would let a crafted backend (or
+    client) inject extra headers/responses — an HTTP response/request
+    splitting vector. A well-behaved peer never sends these."""
+    return "\r" not in name and "\n" not in name and "\r" not in value and "\n" not in value
+
+
 def _forwardable_request_headers(headers, backend):
-    """Copy client request headers, dropping hop-by-hop ones and pinning Host
-    to the selected backend."""
+    """Copy client request headers, dropping hop-by-hop and unsafe (CRLF-laden)
+    ones and pinning Host to the selected backend."""
     out = []
     for key, value in headers.items():
         lowered = key.lower()
         if lowered in HOP_BY_HOP_HEADERS or lowered == "host":
+            continue
+        if not _is_safe_header(key, value):
             continue
         out.append((key, value))
     out.append(("Host", backend))
@@ -276,45 +287,71 @@ def make_proxy_handler(backends):
             backend = self._next_backend()
             host, _, port = backend.partition(":")
 
+            # Parse the body length defensively: a malformed Content-Length
+            # must yield a 400, not an uncaught ValueError that kills the
+            # request thread.
+            content_length = None
             length_header = self.headers.get("Content-Length")
+            if length_header is not None:
+                try:
+                    content_length = int(length_header)
+                except ValueError:
+                    self.send_error(400, "invalid Content-Length")
+                    return
+
+            conn = None
             try:
-                conn = http.client.HTTPConnection(host, int(port), timeout=300)
-                conn.putrequest(
-                    self.command,
-                    self.path,
-                    skip_host=True,
-                    skip_accept_encoding=True,
-                )
-                for key, value in _forwardable_request_headers(self.headers, backend):
-                    conn.putheader(key, value)
-                conn.endheaders()
+                try:
+                    conn = http.client.HTTPConnection(host, int(port), timeout=300)
+                    conn.putrequest(
+                        self.command,
+                        self.path,
+                        skip_host=True,
+                        skip_accept_encoding=True,
+                    )
+                    for key, value in _forwardable_request_headers(
+                        self.headers, backend
+                    ):
+                        conn.putheader(key, value)
+                    conn.endheaders()
 
-                # Stream the request body (if any) without buffering it whole.
-                if length_header is not None:
-                    remaining = int(length_header)
-                    while remaining > 0:
-                        chunk = self.rfile.read(min(PROXY_BUFFER, remaining))
-                        if not chunk:
-                            break
-                        conn.send(chunk)
-                        remaining -= len(chunk)
+                    # Stream the request body (if any) without buffering it whole.
+                    if content_length is not None:
+                        remaining = content_length
+                        while remaining > 0:
+                            chunk = self.rfile.read(min(PROXY_BUFFER, remaining))
+                            if not chunk:
+                                break
+                            conn.send(chunk)
+                            remaining -= len(chunk)
 
-                resp = conn.getresponse()
-            except OSError as exc:
-                # No health checks by design; a dead/slow backend yields a 502
-                # without taking down the proxy thread.
-                self.send_error(502, f"proxy backend error: {exc}")
-                return
+                    resp = conn.getresponse()
+                except OSError as exc:
+                    # No health checks by design; a dead/slow backend yields a
+                    # 502 without taking down the proxy thread.
+                    self.send_error(502, f"proxy backend error: {exc}")
+                    return
 
-            # Forward the backend response faithfully (status + headers + body).
-            self.send_response_only(resp.status, resp.reason)
-            for key, value in resp.getheaders():
-                if key.lower() in HOP_BY_HOP_HEADERS:
-                    continue
-                self.send_header(key, value)
-            self.end_headers()
-            shutil.copyfileobj(resp, self.wfile, PROXY_BUFFER)
-            conn.close()
+                # Forward the backend response faithfully (status + headers +
+                # body). Drop any header carrying embedded CRLF to prevent
+                # response splitting.
+                self.send_response_only(resp.status, resp.reason)
+                for key, value in resp.getheaders():
+                    if key.lower() in HOP_BY_HOP_HEADERS:
+                        continue
+                    if not _is_safe_header(key, value):
+                        continue
+                    self.send_header(key, value)
+                self.end_headers()
+                try:
+                    shutil.copyfileobj(resp, self.wfile, PROXY_BUFFER)
+                except OSError:
+                    pass  # Client disconnected mid-stream; nothing to recover.
+            finally:
+                # Guarantee the backend connection is released even if the
+                # client disconnects or response forwarding raises.
+                if conn is not None:
+                    conn.close()
 
         do_GET = _proxy
         do_HEAD = _proxy

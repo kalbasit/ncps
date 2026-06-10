@@ -144,6 +144,24 @@ class TestProxyForwarding(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(f"putlen={len(payload)}".encode(), data)
 
+    def test_malformed_content_length_returns_400(self):
+        stub = _start_stub("s0")
+        self.stubs.append(stub)
+        proxy = self._proxy([_addr(stub)])
+
+        # http.client refuses to emit a non-numeric Content-Length, so craft
+        # the raw request by hand.
+        sock = socket.create_connection(
+            ("127.0.0.1", proxy.server_address[1]), timeout=5
+        )
+        sock.sendall(
+            b"PUT /upload HTTP/1.1\r\nHost: x\r\n"
+            b"Content-Length: not-a-number\r\n\r\n"
+        )
+        status_line = sock.recv(256).split(b"\r\n", 1)[0]
+        sock.close()
+        self.assertIn(b"400", status_line)
+
     def test_dead_backend_returns_502(self):
         dead = f"127.0.0.1:{_free_port()}"  # nothing is listening here
         proxy = self._proxy([dead])
