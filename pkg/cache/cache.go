@@ -1993,23 +1993,27 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 		zerolog.Ctx(ctx).Debug().Msg("deleting nar from store")
 
 		// Remove the physical bytes. A Compression:none NAR's real object is stored
-		// under the .nar.zst variant (statNarInStore mirrors this), so that variant
-		// must be deleted too — deleting only the bare none URL would orphan the
-		// blob while the marker below is cleared, making the /upload presence check
-		// lie. ErrNotFound is returned only when no variant was present, preserving
-		// the established "deleting an absent NAR errors" contract; a real failure
-		// is returned and leaves the marker intact (the NAR stays present).
+		// under a compressed variant (.nar.zst canonically, or .nar.xz under the
+		// narinfo<->nar_file compression desync), so every servable variant must be
+		// deleted too — this mirrors statNarInStore/getNarFromStore, which now serve
+		// a none request from any of these. Deleting only one variant would orphan
+		// the blob while the marker below is cleared, making the /upload presence
+		// check lie. ErrNotFound is returned only when no variant was present,
+		// preserving the established "deleting an absent NAR errors" contract; a real
+		// failure is returned and leaves the marker intact (the NAR stays present).
 		deleted := false
 
 		if narURL.Compression == nar.CompressionTypeNone {
-			zstdURL := narURL
-			zstdURL.Compression = nar.CompressionTypeZstd
+			for _, comp := range wholeFileServeCompressions() {
+				candURL := narURL
+				candURL.Compression = comp
 
-			switch err := c.narStore.DeleteNar(ctx, zstdURL); {
-			case err == nil:
-				deleted = true
-			case !errors.Is(err, storage.ErrNotFound):
-				return err
+				switch err := c.narStore.DeleteNar(ctx, candURL); {
+				case err == nil:
+					deleted = true
+				case !errors.Is(err, storage.ErrNotFound):
+					return err
+				}
 			}
 		}
 
@@ -5327,17 +5331,20 @@ func (c *Cache) getNarInfoFromUpstream(
 }
 
 // deleteNarBytes removes a NAR's physical bytes from the store. For
-// Compression:none NARs the object is physically stored under the .nar.zst
-// variant (see statNarInStore), so that variant is removed as well; otherwise a
-// reclaimed none NAR would leave its real object orphaned and invisible to
-// normal cleanup/accounting.
+// Compression:none NARs the object is physically stored under a compressed
+// variant (.nar.zst canonically, or .nar.xz under the narinfo<->nar_file
+// compression desync; see statNarInStore/getNarFromStore), so every servable
+// variant is removed as well; otherwise a reclaimed none NAR would leave its
+// real object orphaned and invisible to normal cleanup/accounting.
 func (c *Cache) deleteNarBytes(ctx context.Context, narURL nar.URL) error {
 	if narURL.Compression == nar.CompressionTypeNone {
-		zstdURL := narURL
-		zstdURL.Compression = nar.CompressionTypeZstd
+		for _, comp := range wholeFileServeCompressions() {
+			candURL := narURL
+			candURL.Compression = comp
 
-		if err := c.narStore.DeleteNar(ctx, zstdURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
-			return err
+			if err := c.narStore.DeleteNar(ctx, candURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+				return err
+			}
 		}
 	}
 

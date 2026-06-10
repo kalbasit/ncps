@@ -86,3 +86,37 @@ func TestServeNoneRequestFromXzWholeFile(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrNotFound,
 		"serving by decompression must not synthesize a spurious none nar_file row")
 }
+
+// TestDeleteNoneDeletesXzWholeFile guards the delete/GC symmetry: because a
+// Compression:none request can now be served from a stored .nar.xz whole file,
+// deleting the none NAR MUST remove that xz blob too. Otherwise a drifted
+// none->xz NAR would be reported present, yet DeleteNar would return
+// ErrNotFound (or purge/LRU would drop the DB row while leaking the xz blob).
+func TestDeleteNoneDeletesXzWholeFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	c, _, _, _, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	original := testhelper.MustRandString(50160)
+	xzBytes := xzCompress(t, original)
+
+	entry := testdata.Nar1
+	xzURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}
+	noneURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
+
+	require.NoError(t, c.PutNar(ctx, xzURL, io.NopCloser(bytes.NewReader(xzBytes))))
+	require.True(t, c.HasNarInStore(ctx, noneURL),
+		"precondition: a none request must see the stored xz whole file")
+
+	// Deleting the none NAR must succeed (not ErrNotFound) and remove the xz blob.
+	require.NoError(t, c.DeleteNar(ctx, noneURL),
+		"deleting a none NAR backed only by a .nar.xz whole file must succeed")
+
+	assert.False(t, c.HasNarInStore(ctx, xzURL),
+		"the .nar.xz blob must be deleted, not leaked")
+	assert.False(t, c.HasNarInStore(ctx, noneURL),
+		"the none NAR must no longer be reported present")
+}
