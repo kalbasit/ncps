@@ -77,7 +77,19 @@ jobs:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run e2e catalog (${{ matrix.mode }})
-        run: nix run .#e2e -- --mode ${{ matrix.mode }} --all
+        run: |
+          if [ "${{ matrix.mode }}" = "local" ]; then
+            # Local mode drives dev-scripts/run.py, which launches each ncps
+            # replica via watchexec + `direnv exec` + `go run` and therefore
+            # needs the dev-shell toolchain. Run it inside `nix develop` (which
+            # now bundles direnv) with the repo's .envrc allowed so `direnv
+            # exec` can load the flake env. The kubernetes leg is self-contained
+            # in the `nix run .#e2e` wrapper (kubectl/helm/kind) and needs none
+            # of this.
+            nix develop --command bash -c 'direnv allow . && nix run .#e2e -- --mode local --all'
+          else
+            nix run .#e2e -- --mode kubernetes --all
+          fi
   record:
     needs: [gate, e2e]
     # Only record the tested SHA after a fully successful matrix run, so a

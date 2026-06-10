@@ -103,6 +103,7 @@ class LocalDeployment:
         pending = set(self._ports())
         while time.time() < deadline:
             if self._proc.poll() is not None:
+                self._dump_logs()
                 raise RuntimeError(
                     f"local: run.py exited with code {self._proc.returncode} "
                     "before all replicas became ready (see var/log/e2e-run.py.log)"
@@ -119,7 +120,26 @@ class LocalDeployment:
                 log(f"local: all {self.replicas} replica(s) ready", G)
                 return
             time.sleep(1)
+        self._dump_logs()
         raise RuntimeError(f"local: replicas not ready within {timeout}s: {sorted(pending)}")
+
+    def _dump_logs(self) -> None:
+        """Best-effort: echo run.py's harness log and each replica's ncps log so
+        a CI failure shows *why* ncps did not come up. Never raises."""
+        try:
+            if self._harness_log is not None:
+                self._harness_log.flush()
+        except Exception:  # noqa: BLE001 — diagnostics are best-effort
+            pass
+        paths = [os.path.join(LOG_DIR, "e2e-run.py.log")]
+        paths += [os.path.join(LOG_DIR, f"ncps-{p}.log") for p in self._ports()]
+        for path in paths:
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    content = f.read().strip()
+            except OSError:
+                content = "(no log file)"
+            log(f"local: --- {os.path.basename(path)} ---\n{content or '(empty)'}", R)
 
     def _stop(self) -> None:
         if self._proc is not None and self._proc.poll() is None:
