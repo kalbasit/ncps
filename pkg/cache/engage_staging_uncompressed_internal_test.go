@@ -87,7 +87,12 @@ func TestPollDStateWaitsForStagingPartsBeforeProgressive(t *testing.T) {
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 
-		_ = c.markStagingRequested(ctx, hash)
+		if e := c.markStagingRequested(ctx, hash); e != nil {
+			staged <- e
+
+			return
+		}
+
 		if e := c.advanceStagingParts(ctx, hash, 1, nar.CompressionTypeNone.String()); e != nil {
 			staged <- e
 
