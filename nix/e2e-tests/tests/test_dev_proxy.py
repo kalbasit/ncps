@@ -93,6 +93,27 @@ class _CaptureHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def do_GET(self):
+        # Two response shapes for keep-alive framing tests:
+        #   /upload/framed   -> 200 with an explicit Content-Length (delimitable)
+        #   /upload/unframed -> 200 with NO Content-Length; this HTTP/1.0 backend
+        #                       signals end-of-body by closing the connection.
+        if self.path == "/upload/framed":
+            body = b"framed-body"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/upload/unframed":
+            body = b"unframed-body-no-length"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
 
 def _start_capture_backend():
     port = _free_port()
@@ -201,6 +222,179 @@ def test_truncated_content_length_body_returns_502_not_hang():
             status_line = sock.recv(64)
             assert status_line.startswith(b"HTTP/"), status_line
             assert b" 502 " in status_line, status_line
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
+
+
+def _read_response_head(sock):
+    """Read one HTTP response's status line + headers from ``sock``.
+
+    Returns ``(status_line, headers, leftover)`` where ``headers`` is a
+    lower-cased dict and ``leftover`` is any bytes already read past the header
+    block (the start of the body), or ``(None, data, b"")`` if the connection
+    closed before a full header block arrived. Returning ``leftover`` keeps
+    body reads deterministic even when the kernel coalesces the headers and
+    body into a single ``recv``."""
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = sock.recv(4096)
+        if not chunk:
+            return None, data, b""
+        data += chunk
+    head, leftover = data.split(b"\r\n\r\n", 1)
+    lines = head.split(b"\r\n")
+    headers = {}
+    for line in lines[1:]:
+        if b":" in line:
+            key, value = line.split(b":", 1)
+            headers[key.strip().lower()] = value.strip()
+    return lines[0], headers, leftover
+
+
+def _send_put(sock, case, body):
+    sock.sendall(
+        f"PUT /upload/nar/{case}.nar.zst HTTP/1.1\r\n".encode()
+        + b"Host: 127.0.0.1\r\n"
+        + f"X-Test-Case: {case}\r\n".encode()
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Connection: keep-alive\r\n\r\n"
+        + body
+    )
+
+
+def test_http11_connection_is_reused_across_requests():
+    # The bug: the proxy spoke HTTP/1.0 and closed every connection after one
+    # request, so a keep-alive client (nix/libcurl) was forced to open a new
+    # TCP connection per object — thousands for a large closure — which under
+    # load intermittently reset uploads (curl error 56). The proxy must keep a
+    # persistent HTTP/1.1 connection so the client can reuse it.
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=10)
+        sock.settimeout(10)
+        try:
+            for i in range(3):
+                _send_put(sock, f"reuse_{i}", b"X" * 1000)
+                status, _headers, _leftover = _read_response_head(sock)
+                assert status is not None, (
+                    f"proxy closed the connection before request {i}; "
+                    "it is not honoring keep-alive"
+                )
+                assert status.startswith(b"HTTP/1.1"), status
+                assert b"204" in status, status
+            # All three requests were served on a single reused connection.
+            assert _CaptureHandler.received.get("reuse_2") == 1000
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
+
+
+def test_expect_100_continue_is_answered():
+    # A large PUT carries `Expect: 100-continue`; the proxy must answer the
+    # interim `100 Continue` before the client streams the body, otherwise the
+    # client stalls ~1s per upload waiting for it.
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=5)
+        sock.settimeout(5)
+        try:
+            body = b"X" * 5000
+            sock.sendall(
+                b"PUT /upload/nar/expect_case.nar.zst HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"X-Test-Case: expect_case\r\n"
+                b"Content-Length: 5000\r\n"
+                b"Expect: 100-continue\r\n\r\n"
+            )
+            interim, _headers, _leftover = _read_response_head(sock)
+            assert interim is not None and interim.startswith(b"HTTP/1.1 100"), interim
+            sock.sendall(body)
+            status, _headers2, _leftover2 = _read_response_head(sock)
+            assert status is not None and b"204" in status, status
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
+
+
+def test_unframed_response_forces_connection_close():
+    # If the backend response has no Content-Length and is not bodiless, the
+    # proxy cannot keep the connection in sync for a following request, so it
+    # must signal `Connection: close` and let the client read to EOF rather
+    # than mis-framing the next response.
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=10)
+        sock.settimeout(10)
+        try:
+            sock.sendall(
+                b"GET /upload/unframed HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"Connection: keep-alive\r\n\r\n"
+            )
+            status, headers, leftover = _read_response_head(sock)
+            assert status is not None and b"200" in status, status
+            assert headers.get(b"connection", b"").lower() == b"close", headers
+            # The rest of the socket is the body, terminated by EOF (close).
+            rest = bytearray(leftover)
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                rest += chunk
+            assert b"unframed-body-no-length" in bytes(rest), bytes(rest)
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
+
+
+def test_framed_get_keeps_connection_alive():
+    # A delimitable response (explicit Content-Length) must keep the connection
+    # open AND be framed exactly so a second request on the same raw socket is
+    # served correctly. (A buffered client like http.client would silently
+    # reconnect on an HTTP/1.0 close and mask the bug, so we use a raw socket.)
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=10)
+        sock.settimeout(10)
+        try:
+            for _ in range(2):
+                sock.sendall(
+                    b"GET /upload/framed HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    b"Connection: keep-alive\r\n\r\n"
+                )
+                status, headers, leftover = _read_response_head(sock)
+                assert status is not None, "proxy did not keep the connection alive"
+                assert status.startswith(b"HTTP/1.1") and b"200" in status, status
+                length = int(headers.get(b"content-length", b"0"))
+                body = bytearray(leftover)
+                while len(body) < length:
+                    chunk = sock.recv(length - len(body))
+                    if not chunk:
+                        break
+                    body += chunk
+                assert bytes(body) == b"framed-body", bytes(body)
         finally:
             sock.close()
     finally:
