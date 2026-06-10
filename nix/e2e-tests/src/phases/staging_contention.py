@@ -230,7 +230,17 @@ def _run_chunking_window(deployment) -> None:
         log(f"  narinfo primed in {time.monotonic() - t0:.1f}s (url {nar_url})", B)
 
         if _await_inflight(deployment.db(), _hash_from_nar_url(nar_url)) == "missed":
+            # The window is already closed: racing now is guaranteed not to engage
+            # staging, so skip the slow/heavy race and retry from a clean state
+            # immediately rather than wasting it on a result we would discard.
             log("  in-flight window already closed before racing", Y)
+            if attempt < CHUNKING_ATTEMPTS:
+                log(
+                    f"  attempt {attempt}/{CHUNKING_ATTEMPTS}: clean restart + retry immediately",
+                    Y,
+                )
+                deployment.clean_restart(cdc=True)
+                continue
         else:
             log("  in-flight window open — racing while the holder downloads/chunks", B)
 
