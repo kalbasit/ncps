@@ -3571,12 +3571,20 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	}
 
 	// Chunks are always uncompressed. If the client requested a compressed NAR
-	// (e.g. .nar.xz) but the whole-file is no longer in storage (only chunks
-	// remain), we cannot reconstruct the compressed stream. Return not-found so
-	// the client falls back to an upstream cache that still has the original
-	// compressed file. This prevents "input compression not recognized" errors
-	// caused by serving raw chunk bytes to a client expecting xz data.
+	// but only chunks remain, we must produce the compressed stream on the fly
+	// (the inverse of the uncompressed-serve fallback; issue #1392):
+	//   - zstd: reassemble the chunks and recompress to zstd while streaming, so a
+	//     zstd-advertised request (e.g. a cachix-origin narinfo under steady-state
+	//     CDC) is served instead of 404'd.
+	//   - any other codec (e.g. xz): ncps has no compressor, so return not-found
+	//     and let the client fall back to an upstream that still has the original
+	//     compressed file. Serving raw chunk bytes for it would cause
+	//     "input compression not recognized" at the client.
 	if serveFromChunks && narURL.Compression != nar.CompressionTypeNone {
+		if narURL.Compression == nar.CompressionTypeZstd {
+			return c.serveZstdFromChunks(ctx, narURL)
+		}
+
 		return 0, nil, fmt.Errorf("NAR %s is only available as chunks, cannot serve as %s: %w",
 			narURL.Hash, narURL.Compression, storage.ErrNotFound)
 	}
@@ -3660,6 +3668,42 @@ func (c *Cache) serveNarFromStorageViaPipe(
 
 	// Return pipe reader (safe from request context cancellation) with known size
 	return storageSize, pipeReader, nil
+}
+
+// serveZstdFromChunks serves a Compression:zstd request whose NAR is present
+// only as uncompressed CDC chunks. It reassembles the uncompressed bytes via
+// getNarFromChunks and recompresses them to zstd while streaming, so a
+// zstd-advertised request is served instead of 404'd (the inverse of the
+// uncompressed-serve fallback; issue #1392). The compressed length is not known
+// up front, so it returns size -1; the reader yields the zstd-compressed NAR.
+func (c *Cache) serveZstdFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
+	noneURL := *narURL
+	noneURL.Compression = nar.CompressionTypeNone
+
+	_, rawReader, err := c.getNarFromChunks(ctx, &noneURL)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	pipeReader, pipeWriter := io.Pipe()
+
+	analytics.SafeGo(ctx, func() {
+		zw := zstd.NewPooledWriter(pipeWriter)
+
+		_, copyErr := io.Copy(zw, rawReader)
+
+		closeErr := zw.Close()
+
+		_ = rawReader.Close()
+
+		if copyErr != nil {
+			pipeWriter.CloseWithError(copyErr)
+		} else {
+			pipeWriter.CloseWithError(closeErr)
+		}
+	})
+
+	return -1, pipeReader, nil
 }
 
 // wholeFileServeCompressions lists the stored whole-file compressions that can
