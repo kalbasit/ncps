@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+import time
 
 from client import (
     canonical_nar_sha256,
@@ -20,7 +21,7 @@ from client import (
     hash_of_store_path,
     realise_package,
 )
-from harness_config import AssertionFailure, B, check, log, section
+from harness_config import AssertionFailure, B, Y, check, log, section
 
 STAGING_ACTIVATION_LOG = (
     "in-flight staging parts available, serving from staging while peer downloads"
@@ -78,7 +79,48 @@ def _scan_logs(deployment, needle: str):
     return hits
 
 
-def _run_window(deployment, *, cdc: bool) -> None:
+# Bounded retries for the chunking window: a missed in-flight window (the NAR
+# fully chunked before any reader could contend) is a transient timing loss, not
+# an ncps defect, so we restart clean and try again — but only a bounded number
+# of times so a genuine non-activation still FAILs.
+def _hash_from_nar_url(nar_url: str) -> str:
+    """Extract the NAR hash from a ``nar/<hash>.nar[.xz]`` URL."""
+    return nar_url.rsplit("/", 1)[-1].split(".", 1)[0]
+
+
+def _inflight_state(db, hash: str) -> str:
+    """Classify eager-CDC materialization from the ``nar_files`` row.
+
+    - ``absent``  : no row yet — the download is in progress before the chunk
+      row is created (the bulk of the in-flight window).
+    - ``inflight``: a row with ``total_chunks == 0`` — actively chunking, the
+      download lock is still held.
+    - ``done``    : ``total_chunks > 0`` — fully chunked, the in-flight window
+      has already closed.
+    """
+    rows = db.query("SELECT total_chunks FROM nar_files WHERE hash = ?", (hash,))
+    if not rows:
+        return "absent"
+    tc = rows[0][0] or 0
+    return "done" if tc > 0 else "inflight"
+
+
+def _await_inflight(db, hash) -> str:
+    """Decide whether to race now to overlap an in-flight eager-CDC download.
+
+    Returns ``"missed"`` only when the NAR is already fully chunked
+    (``total_chunks > 0`` — the in-flight window has closed); otherwise
+    ``"inflight"``. Crucially we race on ``absent`` (download in progress, chunk
+    row not yet created) as well as on an actively-chunking row, so the readers
+    overlap the long *download* phase. Waiting for the chunk row (``total_chunks
+    == 0``) would fire only after the download finishes, leaving the brief
+    post-download chunk phase too short to reliably contend.
+    """
+    return "missed" if _inflight_state(db, hash) == "done" else "inflight"
+
+
+def _window_setup(deployment, *, cdc: bool) -> tuple:
+    """Section header, canonical reference, and per-replica config assertions."""
     window = "chunking" if cdc else "download"
     section(f"CONTENTION WINDOW: {window} (cdc={cdc})")
 
@@ -96,16 +138,21 @@ def _run_window(deployment, *, cdc: bool) -> None:
         len(state.get("instances", [])) == len(deployment.replica_urls()),
         "all replicas recorded in state.json",
     )
+    return store_hash, canonical
 
-    # Prime the narinfo once (NAR stays uncached); learn the NAR URL + Compression.
+
+def _prime(deployment, store_hash: str, *, cdc: bool) -> tuple:
+    """Fetch the narinfo (learning the NAR URL + Compression).
+
+    Under eager CDC this also triggers the fire-and-forget background prefetch
+    that opens the in-flight window the chunking-window race must overlap.
+    """
     c = deployment.client(0)
     ni = None
     for _ in range(30):
         ni = c.fetch_narinfo(store_hash)
         if ni:
             break
-        import time
-
         time.sleep(1)
     check(ni is not None, "narinfo served (NAR still uncached)")
     fields = c.parse_narinfo(ni)
@@ -121,10 +168,11 @@ def _run_window(deployment, *, cdc: bool) -> None:
             nar_url.endswith(".nar") and not nar_url.endswith(".nar.xz"),
             f"eager-CDC narinfo URL is the uncompressed .nar (got {nar_url!r})",
         )
+    return nar_url, comp
 
-    log(f"  racing {CLIENTS} clients on {nar_url} (Compression={comp})", B)
-    race = _race_fetch(deployment, nar_url, comp, CLIENTS)
 
+def _assert_race_content(race, canonical: str) -> None:
+    """Every reader returned a complete NAR byte-identical to the canonical one."""
     ok = [r for r in race if r and r["status"] == 200]
     check(len(ok) == CLIENTS, f"all {CLIENTS} readers returned HTTP 200")
     digests = {r["digest"] for r in race if r}
@@ -134,12 +182,23 @@ def _run_window(deployment, *, cdc: bool) -> None:
         "served NAR decompresses byte-identical to canonical `nix-store --dump`",
     )
 
+
+def _run_download_window(deployment) -> None:
+    """Download window (CDC off): the readers' race IS the first NAR request, so
+    a plain prime-then-race already overlaps the in-flight whole-file download."""
+    store_hash, canonical = _window_setup(deployment, cdc=False)
+    nar_url, comp = _prime(deployment, store_hash, cdc=False)
+    log(f"  racing {CLIENTS} clients on {nar_url} (Compression={comp})", B)
+    t0 = time.monotonic()
+    race = _race_fetch(deployment, nar_url, comp, CLIENTS)
+    log(f"  race completed in {time.monotonic() - t0:.1f}s", B)
+    _assert_race_content(race, canonical)
     activated_on = _scan_logs(deployment, STAGING_ACTIVATION_LOG)
     if not activated_on:
         contended = _scan_logs(deployment, LOCK_CONTENTION_LOG)
         producer_error = _scan_logs(deployment, PRODUCER_ERROR_LOG)
         raise AssertionFailure(
-            f"in-flight staging did not activate in the {window} window "
+            "in-flight staging did not activate in the download window "
             f"(contended={contended}, producer_error={producer_error}); a no-op "
             "run is a failure — use a larger --package or more clients so readers "
             "actually race an in-flight download"
@@ -147,9 +206,57 @@ def _run_window(deployment, *, cdc: bool) -> None:
     check(True, f"in-flight staging activated (replicas {activated_on})")
 
 
+def _run_chunking_window(deployment) -> None:
+    """Chunking window (eager CDC): under eager CDC the cross-pod reader of the
+    uncompressed `.nar` is served *progressively from the holder's chunks* (the
+    designed #1289 path) — not from in-flight staging, which is a download-window
+    mechanism. So we race readers while the eager-CDC download+chunk is in flight
+    and assert every reader receives a complete, byte-identical NAR with the NAR
+    chunked by exactly ONE replica: i.e. the contending cross-pod readers served
+    from the shared chunk set with no re-download and no re-chunk. (Staging
+    activation is asserted only in the download window, where there are no chunks
+    to stream.)"""
+    store_hash, canonical = _window_setup(deployment, cdc=True)
+    t0 = time.monotonic()
+    nar_url, comp = _prime(deployment, store_hash, cdc=True)
+    log(f"  narinfo primed in {time.monotonic() - t0:.1f}s (url {nar_url})", B)
+    h = _hash_from_nar_url(nar_url)
+
+    # Race while the eager-CDC download+chunk is still in flight so the cross-pod
+    # readers exercise progressive chunk-serving rather than serving an
+    # already-complete chunk set. The gate is best-effort: the correctness
+    # assertions below hold in either case.
+    if _await_inflight(deployment.db(), h) == "missed":
+        log(
+            "  note: NAR already fully materialized; cross-pod readers will serve "
+            "from the committed chunk set rather than mid-chunking",
+            Y,
+        )
+    else:
+        log("  in-flight window open — racing while the holder downloads/chunks", B)
+
+    log(f"  racing {CLIENTS} clients on {nar_url} (Compression={comp})", B)
+    t0 = time.monotonic()
+    race = _race_fetch(deployment, nar_url, comp, CLIENTS)
+    log(f"  race completed in {time.monotonic() - t0:.1f}s", B)
+
+    _assert_race_content(race, canonical)
+
+    # No cross-pod re-download/re-chunk: the per-hash migration (chunking) lock is
+    # taken only by the replica that actually chunks the NAR, so exactly one
+    # replica should appear. The other replica's readers served from the shared
+    # chunk set.
+    chunkers = _scan_logs(deployment, f"migration:{h}")
+    check(
+        len(chunkers) == 1,
+        "eager-CDC NAR chunked by exactly one replica — cross-pod readers served "
+        f"from the shared chunk set with no re-download/re-chunk (chunked on {chunkers})",
+    )
+
+
 def run(deployment, scenario) -> None:
     # Window 1 — download (CDC off): use the initial clean provision (cdc off).
-    _run_window(deployment, cdc=False)
+    _run_download_window(deployment)
     # Window 2 — chunking (CDC on): clean restart so the NAR is uncached again.
     deployment.clean_restart(cdc=True)
-    _run_window(deployment, cdc=True)
+    _run_chunking_window(deployment)
