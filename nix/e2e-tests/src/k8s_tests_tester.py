@@ -677,14 +677,24 @@ class NCPSTester:
             # When using debug with --target, access target's filesystem via /proc/1/root
             target_db_path = f"/proc/1/root{db_path}"
 
-            # Snapshot the live DB with SQLite's online backup, which yields a
-            # WAL-consistent copy. The previous approach copied ncps.db,
-            # ncps.db-wal and ncps.db-shm as three separate files; a checkpoint
-            # landing between the copies (main file copied pre-checkpoint without
-            # the table, WAL then truncated) produced a snapshot missing freshly
-            # written tables — a flaky "nar_files not found" even though the live
-            # DB clearly has it (the HTTP narinfo probe, which reads nar_files,
-            # passes). `.backup` coordinates with WAL and concurrent writers.
+            # Copy the DB to writable /tmp and query the copy. We cannot open the
+            # live DB in place: with WAL mode sqlite needs to write the directory
+            # (-shm/locks) to open it, but the ephemeral debug container sees the
+            # target fs via /proc/1/root read-only, so a direct open (or
+            # `.backup`) fails with "unable to open database file". cp only reads
+            # bytes, which works.
+            #
+            # Copy order matters: copy -wal FIRST and the main DB LAST, so the
+            # main file is the newest in the snapshot. If a checkpoint lands
+            # mid-copy, the DB copied last already has the table (and the now
+            # stale -wal is ignored on a salt mismatch); if none does, the copied
+            # -wal still matches the DB and sqlite replays it. The reverse order
+            # (DB first) was the flaky bug — a checkpoint between `cp db` and
+            # `cp wal` left an old DB plus a truncated WAL, so the table went
+            # missing even though the live DB had it. We deliberately do NOT copy
+            # -shm (the volatile wal-index); sqlite rebuilds it in /tmp, and a
+            # stale -shm could otherwise make it trust an inconsistent wal index.
+            #
             # nouchka/sqlite3 ships sqlite3; no --profile=restricted because it
             # sets runAsNonRoot, which the kubelet rejects for that root image
             # (the debug container never starts and the probe times out).
@@ -703,7 +713,9 @@ class NCPSTester:
                         "--",
                         "sh",
                         "-c",
-                        f"sqlite3 {target_db_path} \".backup '/tmp/test.db'\" "
+                        "rm -f /tmp/test.db /tmp/test.db-wal /tmp/test.db-shm; "
+                        f"cp {target_db_path}-wal /tmp/test.db-wal 2>/dev/null; "
+                        f"cp {target_db_path} /tmp/test.db "
                         f"&& sqlite3 /tmp/test.db {query_arg}",
                     ],
                     capture_output=True,
