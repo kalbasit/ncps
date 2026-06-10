@@ -2,6 +2,8 @@
 
 import argparse
 import gzip
+import http.client
+import http.server
 import json
 import os
 import shlex
@@ -9,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from urllib.parse import urlparse
 
@@ -38,6 +41,7 @@ DB_CONFIG = {
 
 REDIS_ADDR = "127.0.0.1:6379"
 BASE_PORT = 8501
+PROXY_PORT = 8500
 PPROF_BASE_PORT = 7501
 
 # Colors
@@ -50,6 +54,7 @@ NC = "\033[0m"
 processes = []
 extra_panes = []  # Track tmux panes created by this script
 tmux_pids = []  # Track PIDs of processes running inside tmux panes
+proxy_servers = []  # Track HA reverse-proxy servers started by this script
 
 
 class TmuxManager:
@@ -119,6 +124,14 @@ def cleanup(signum, frame):
         if p.poll() is None:
             log(f"Force killing process {p.pid}", RED)
             p.kill()
+
+    # Stop the HA reverse proxy (if started) and release its port.
+    for server in proxy_servers:
+        try:
+            server.shutdown()
+            server.server_close()
+        except OSError:
+            pass  # Best-effort shutdown
 
     # Kill extra tmux panes and their processes
     for pane_id in extra_panes:
@@ -195,6 +208,133 @@ def _kill_tree(pid, sig):
         os.kill(pid, sig)
     except (ProcessLookupError, OSError):
         pass
+
+
+# --- HA reverse proxy (dev convenience) ---------------------------------
+#
+# When running multiple instances (HA mode), front them with a single
+# round-robin reverse proxy on PROXY_PORT so a Nix client can target one
+# stable endpoint instead of per-instance ports. Implemented with the
+# standard library only; request/response bodies are streamed with a bounded
+# buffer so large NAR/narinfo transfers do not scale proxy memory with payload
+# size.
+
+PROXY_BUFFER = 64 * 1024
+
+# Hop-by-hop headers must not be forwarded by a proxy (RFC 7230 §6.1).
+HOP_BY_HOP_HEADERS = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "proxy-connection",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+
+
+def pick_backend(backends, counter):
+    """Return the backend for a given request counter (round-robin)."""
+    return backends[counter % len(backends)]
+
+
+def _forwardable_request_headers(headers, backend):
+    """Copy client request headers, dropping hop-by-hop ones and pinning Host
+    to the selected backend."""
+    out = []
+    for key, value in headers.items():
+        lowered = key.lower()
+        if lowered in HOP_BY_HOP_HEADERS or lowered == "host":
+            continue
+        out.append((key, value))
+    out.append(("Host", backend))
+    return out
+
+
+def make_proxy_handler(backends):
+    """Build a BaseHTTPRequestHandler subclass that round-robins requests
+    across `backends` (a list of "host:port" strings)."""
+    state = {"counter": 0}
+    lock = threading.Lock()
+
+    class ProxyHandler(http.server.BaseHTTPRequestHandler):
+        # Quiet: the instances do their own logging.
+        def log_message(self, *_args):
+            pass
+
+        def _next_backend(self):
+            with lock:
+                counter = state["counter"]
+                state["counter"] += 1
+            return pick_backend(backends, counter)
+
+        def _proxy(self):
+            backend = self._next_backend()
+            host, _, port = backend.partition(":")
+
+            length_header = self.headers.get("Content-Length")
+            try:
+                conn = http.client.HTTPConnection(host, int(port), timeout=300)
+                conn.putrequest(
+                    self.command,
+                    self.path,
+                    skip_host=True,
+                    skip_accept_encoding=True,
+                )
+                for key, value in _forwardable_request_headers(self.headers, backend):
+                    conn.putheader(key, value)
+                conn.endheaders()
+
+                # Stream the request body (if any) without buffering it whole.
+                if length_header is not None:
+                    remaining = int(length_header)
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(PROXY_BUFFER, remaining))
+                        if not chunk:
+                            break
+                        conn.send(chunk)
+                        remaining -= len(chunk)
+
+                resp = conn.getresponse()
+            except OSError as exc:
+                # No health checks by design; a dead/slow backend yields a 502
+                # without taking down the proxy thread.
+                self.send_error(502, f"proxy backend error: {exc}")
+                return
+
+            # Forward the backend response faithfully (status + headers + body).
+            self.send_response_only(resp.status, resp.reason)
+            for key, value in resp.getheaders():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                self.send_header(key, value)
+            self.end_headers()
+            shutil.copyfileobj(resp, self.wfile, PROXY_BUFFER)
+            conn.close()
+
+        do_GET = _proxy
+        do_HEAD = _proxy
+        do_PUT = _proxy
+        do_POST = _proxy
+        do_DELETE = _proxy
+
+    return ProxyHandler
+
+
+def start_proxy(host, port, backends):
+    """Start a threaded round-robin reverse proxy and return the server.
+
+    Raises OSError if the address cannot be bound (e.g. the port is in use)."""
+    server = http.server.ThreadingHTTPServer(
+        (host, port), make_proxy_handler(backends)
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
 
 
 def write_state_file(instances, config):
@@ -805,6 +945,38 @@ def main():
             processes.append(p)
             instance_info.append({"port": port, "pid": p.pid})
 
+    # In HA mode, front the instances with a single round-robin reverse proxy
+    # so a Nix client can target one stable endpoint (PROXY_PORT) instead of
+    # juggling per-instance ports. Single-instance runs skip this.
+    proxy_endpoint = None
+    if is_ha:
+        backends = [f"127.0.0.1:{inst['port']}" for inst in instance_info]
+        try:
+            server = start_proxy("127.0.0.1", PROXY_PORT, backends)
+        except OSError as exc:
+            log(
+                f"⛔ ERROR: failed to bind HA proxy on port {PROXY_PORT}: {exc}",
+                RED,
+            )
+            # Tear down the instances we just started before bailing out.
+            for p in processes:
+                if p.poll() is None:
+                    p.terminate()
+            for pane_id in extra_panes:
+                try:
+                    TmuxManager.kill_pane(pane_id)
+                except subprocess.CalledProcessError:
+                    pass
+            for pid in tmux_pids:
+                _kill_tree(pid, signal.SIGTERM)
+            sys.exit(1)
+        proxy_servers.append(server)
+        proxy_endpoint = {"host": "127.0.0.1", "port": PROXY_PORT}
+        log(
+            f"HA proxy listening on http://127.0.0.1:{PROXY_PORT} → {', '.join(backends)}",
+            GREEN,
+        )
+
     state_config = {
         "cdc": args.enable_cdc,
         "inflight_staging": staging_active,
@@ -822,6 +994,8 @@ def main():
             "access_key": S3_CONFIG["access_key"],
             "secret_key": S3_CONFIG["secret_key"],
         }
+    if proxy_endpoint:
+        state_config["proxy"] = proxy_endpoint
 
     state_path = write_state_file(instance_info, state_config)
     log(f"State written to {state_path}", BLUE)
