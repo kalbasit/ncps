@@ -45,11 +45,17 @@ def _allow_direnv_once() -> None:
     global _direnv_allowed
     if _direnv_allowed:
         return
-    _direnv_allowed = True
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["direnv", "allow", REPO_ROOT], cwd=REPO_ROOT, check=False, timeout=30
         )
+        # Latch only on success so a transient failure is retried on the next
+        # start (e.g. a restart within a scenario) rather than wedging the rest
+        # of the run.
+        if result.returncode == 0:
+            _direnv_allowed = True
+        else:
+            log("local: 'direnv allow' returned non-zero (will retry later)", Y)
     except Exception as e:  # noqa: BLE001 — best-effort
         log(f"local: 'direnv allow' failed (ignored): {e}", Y)
 
