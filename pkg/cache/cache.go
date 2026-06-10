@@ -875,6 +875,22 @@ func (c *Cache) InflightStagingEnabled() bool {
 	return c.inflightStagingFlag && c.lockerIsDistributed
 }
 
+// shouldCoordinateInflight reports whether an actively-chunking (servable but not
+// finished) read must fall through to download coordination — where it contends,
+// records an in-flight staging request, and serves from in-flight staging — rather
+// than being served directly from the holder's chunks. A compressed request always
+// must, because decompressed chunks cannot satisfy it. An uncompressed request must
+// too when in-flight staging is enabled, so it engages staging instead of the
+// fragile progressive chunk reassembly (#1289); with staging disabled it keeps
+// serving progressively from chunks (unchanged behavior).
+func (c *Cache) shouldCoordinateInflight(compression nar.CompressionType) bool {
+	if compression != nar.CompressionTypeNone {
+		return true
+	}
+
+	return c.InflightStagingEnabled()
+}
+
 // InflightStagingRetention returns the grace period before staging part-objects
 // are reclaimed after the final representation is committed.
 func (c *Cache) InflightStagingRetention() time.Duration {
@@ -1308,16 +1324,17 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		}
 
 		// An actively-chunking NAR (servable but not yet finished) is stored only as
-		// decompressed chunks, so it cannot satisfy a compressed request: serving it
-		// from chunks would 404 (serveNarFromStorageViaPipe -> serveFromChunks). For a
-		// cross-pod reader (no local download job) that short-circuit also skips
-		// download coordination entirely, so the waiter never records an in-flight
-		// staging request and never serves from staging. Treat such a request as
-		// not-servable here so it falls through to prePullNar -> coordination, where it
-		// records a staging request and serves from in-flight staging (transcoding to
-		// the requested compression). The uncompressed progressive-chunk path and
-		// finished NARs are unaffected (closes the chunking-window cross-pod 404, #1289).
-		if hasNar && narURL.Compression != nar.CompressionTypeNone && !finished {
+		// decompressed chunks. Serving it directly from chunks short-circuits download
+		// coordination, so a cross-pod reader (no local download job) never records an
+		// in-flight staging request and never serves from staging. Treat such a request
+		// as not-servable here so it falls through to prePullNar -> coordination, where
+		// it records a staging request and serves from in-flight staging. A compressed
+		// request always must (decompressed chunks cannot satisfy it); an uncompressed
+		// request must too when in-flight staging is enabled, so it engages staging
+		// instead of the fragile progressive reassembly (closes the chunking-window
+		// cross-pod staging gap, #1289). With staging disabled the uncompressed read
+		// keeps serving progressively from chunks. Finished NARs are unaffected.
+		if hasNar && !finished && c.shouldCoordinateInflight(narURL.Compression) {
 			hasNar = false
 		}
 
@@ -6695,6 +6712,16 @@ func (c *Cache) pollForDownloadOrTakeOver(
 ) (*downloadState, bool) {
 	const pollInterval = 200 * time.Millisecond
 
+	// When staging is active, state (D) below gives the holder's producer a bounded
+	// number of ticks to publish in-flight staging parts before falling back to
+	// progressive chunk serving, so the (C) staging serve wins the common eager-CDC
+	// chunking-window case instead of being pre-empted by (D) on an early tick. The
+	// bound keeps progressive as the safety net for a stalled or errored producer
+	// and stays well under giveUpBound. (#1289)
+	const maxStagingWaitTicks = 15
+
+	stagingWaitTicks := 0
+
 	// Signal the holder that a cross-pod waiter wants the NAR staged so it can be
 	// served during the active-download window (closes #660 / #1289). Idempotent
 	// and free of churn: it is a one-shot marker the holder reads on its own loop.
@@ -6813,6 +6840,22 @@ func (c *Cache) pollForDownloadOrTakeOver(
 			// it does not fire for a plain in-flight download (servable false), which
 			// keeps polling for completion or staging as before.
 			if servable {
+				// Prefer in-flight staging over progressive chunk reassembly: when
+				// staging is active, keep polling (bounded) so the holder's producer
+				// can publish parts and (C) above can serve them. Only once the
+				// bounded staging wait is exhausted (a stalled/errored producer) — or
+				// when staging is disabled — fall back to progressive serving. (#1289)
+				if stagingActive && stagingWaitTicks < maxStagingWaitTicks {
+					stagingWaitTicks++
+
+					zerolog.Ctx(ctx).Debug().
+						Str("hash", hash).
+						Int("staging_wait_tick", stagingWaitTicks).
+						Msg("peer is actively chunking; waiting for in-flight staging parts before progressive fallback")
+
+					continue
+				}
+
 				zerolog.Ctx(ctx).Debug().
 					Str("hash", hash).
 					Msg("peer is actively chunking; routing to progressive chunk streaming")

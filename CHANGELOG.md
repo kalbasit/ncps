@@ -136,6 +136,21 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Non-CDC and lazy-CDC download-lock timing is unchanged, and holder death during
   chunking is still recovered via the lock TTL. (#1289)
 
+- **Eager-CDC uncompressed cross-pod reads now actually engage in-flight staging.**
+  Holding the download lock through chunking (above) was the lock-lifetime
+  groundwork, but the read path still short-circuited the **uncompressed** `.nar`
+  request — the only request clients make once eager-CDC narinfos advertise
+  `Compression: none` — directly to progressive chunk serving, so it never
+  contended and staging never engaged (the fragile progressive reassembly it was
+  meant to supersede remained the path taken). Two read-path sites are fixed: an
+  uncompressed actively-chunking cross-pod read now routes through download
+  coordination when staging is enabled (so it records a staging request and serves
+  from staging), and the coordination poll loop now waits, bounded, for staging
+  parts to appear before falling back to progressive chunks. With staging disabled,
+  lazy CDC, single-replica/same-pod, and finished NARs, behavior is unchanged.
+  Proven end-to-end: the `staging-contention` chunking window now activates
+  in-flight staging on the non-holder. (#1289)
+
 - **Compressed upstream narinfos that omit `FileSize`/`FileHash` are no longer
   rejected.** Some upstreams (e.g. niks3, nix-serve-style servers) emit narinfos
   declaring a compression algorithm but without the optional `FileSize`/`FileHash`
