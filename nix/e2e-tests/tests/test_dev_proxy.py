@@ -18,6 +18,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -55,10 +56,18 @@ def _free_port() -> int:
     return port
 
 
+@pytest.fixture(autouse=True)
+def _clear_capture_state():
+    """Reset the shared capture dict before each test so per-test body-length
+    records never leak across tests in the same process."""
+    _CaptureHandler.received.clear()
+    yield
+
+
 class _CaptureHandler(http.server.BaseHTTPRequestHandler):
     """Backend that records the request-body length per X-Test-Case."""
 
-    received: dict = {}
+    received: ClassVar[dict] = {}
 
     def log_message(self, *_args):
         pass
@@ -151,15 +160,17 @@ def test_chunked_put_forwards_full_body():
         backend.shutdown()
 
 
-def test_unreachable_backend_returns_502_not_reset():
+@pytest.mark.parametrize("chunked", [False, True])
+def test_unreachable_backend_returns_502_not_reset(chunked):
     # Point the proxy at a port with nothing listening.
     dead_port = _free_port()
     proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{dead_port}"])
     proxy_port = proxy.server_address[1]
     try:
         time.sleep(0.2)
-        # The client must observe a clean 502, not a ConnectionResetError.
-        status = _put(proxy_port, "dead_case", b"Y" * 4096, chunked=False)
+        # The client must observe a clean 502, not a ConnectionResetError, for
+        # both Content-Length and Transfer-Encoding: chunked uploads.
+        status = _put(proxy_port, "dead_case", b"Y" * 4096, chunked=chunked)
         assert status == 502
     finally:
         proxy.shutdown()
