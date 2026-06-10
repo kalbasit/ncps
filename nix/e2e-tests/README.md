@@ -72,17 +72,16 @@ To **add a scenario**, add a permutation entry to `config.nix`. The Kubernetes
   auto-exit, fsck repair-not-delete).
 - **`staging-contention`** — race N concurrent clients on one large uncached NAR
   across >=2 redis-locker replicas; every reader must be byte-identical to the
-  canonical `nix-store --dump`. The two windows assert different (correct)
-  cross-pod mechanisms:
-  - **download (CDC off)** — no chunks to stream, so a lock-losing waiter must
-    become an in-flight staging consumer; in-flight staging *must activate* (a
-    no-op run is a FAILURE).
-  - **chunking (eager CDC)** — the cross-pod reader of the uncompressed `.nar`
-    is served progressively from the holder's committed chunks (#1289), *not*
-    from staging. The harness races readers while the download+chunk is in
-    flight and asserts the NAR is chunked by exactly one replica (cross-pod
-    readers served from the shared chunk set, no re-download/re-chunk). Staging
-    activation is **not** asserted here.
+  canonical `nix-store --dump`, and **in-flight staging must activate** on the
+  non-holder in BOTH windows (a no-op run is a FAILURE):
+  - **download (CDC off)** — no chunks to stream, so a lock-losing waiter becomes
+    an in-flight staging consumer.
+  - **chunking (eager CDC)** — with predictive-`none` the cross-pod reader
+    requests the uncompressed `.nar`; ncps routes that actively-chunking read
+    through download coordination so it engages in-flight staging rather than the
+    fragile progressive chunk reassembly (#1289). The harness gates the race on an
+    observed in-flight state so readers overlap the holder's production, retrying
+    from a clean state a bounded number of times if a run misses the window.
 
 In `kubernetes` mode the plain storage×DB / external-secret / HA permutations
 reuse the in-cluster `NCPSTester` validation (serve + CDC-lifecycle topology
