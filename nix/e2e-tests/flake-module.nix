@@ -23,7 +23,10 @@ _: {
           kind
           skopeo
           docker
-          # Shared.
+          # Shared. Local mode additionally needs the dev-shell toolchain
+          # (go, gcc/cgo, watchexec, direnv, dbmate); the nightly provides it by
+          # running the local leg inside the `ci-e2e-local` devShell rather than
+          # bundling a partial toolchain here.
           git
           nix # `nix eval` (catalog) and `nix run .#deps` (local-mode backends)
           (pkgs.python3.withPackages (

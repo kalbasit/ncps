@@ -80,14 +80,12 @@ jobs:
         run: |
           if [ "${{ matrix.mode }}" = "local" ]; then
             # Local mode drives dev-scripts/run.py, which launches each ncps
-            # replica via watchexec + `direnv exec` + `go run` and therefore
-            # needs the dev-shell toolchain. Run it inside `nix develop` (which
-            # now bundles direnv) with the repo's .envrc allowed so `direnv
-            # exec` can load the flake env. The kubernetes leg is self-contained
-            # in the `nix run .#e2e` wrapper (kubectl/helm/kind) and needs none
-            # of this.
-            nix develop --command bash -c 'direnv allow . && nix run .#e2e -- --mode local --all'
+            # replica via watchexec + `direnv exec` + `go run` (cgo needs gcc).
+            # Run it inside the CI dev shell (default toolchain + direnv) so the
+            # leg is self-contained; local.py runs `direnv allow` itself.
+            nix develop .#ci-e2e-local --command bash -c 'nix run .#e2e -- --mode local --all'
           else
+            # Kubernetes mode is self-contained in the e2e wrapper (kubectl/helm/kind).
             nix run .#e2e -- --mode kubernetes --all
           fi
   record:

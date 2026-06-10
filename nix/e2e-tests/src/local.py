@@ -35,6 +35,25 @@ from harness_config import (
 )
 
 
+_direnv_allowed = False
+
+
+def _allow_direnv_once() -> None:
+    """Allow the repo's ``.envrc`` once so run.py's ``direnv exec`` can load the
+    flake env on a fresh checkout (e.g. CI). Best-effort and idempotent; a
+    developer's already-allowed repo just gets a harmless refresh."""
+    global _direnv_allowed
+    if _direnv_allowed:
+        return
+    _direnv_allowed = True
+    try:
+        subprocess.run(
+            ["direnv", "allow", REPO_ROOT], cwd=REPO_ROOT, check=False, timeout=30
+        )
+    except Exception as e:  # noqa: BLE001 — best-effort
+        log(f"local: 'direnv allow' failed (ignored): {e}", Y)
+
+
 class LocalDeployment:
     """A run.py-backed deployment of one scenario."""
 
@@ -57,6 +76,8 @@ class LocalDeployment:
         return [BASE_PORT + i for i in range(self.replicas)]
 
     def _start(self, *, clean: bool, cdc: bool, lazy: bool) -> None:
+        # run.py launches ncps via `direnv exec`; ensure the .envrc is allowed.
+        _allow_direnv_once()
         args = [
             PYTHON,
             RUN_PY,
