@@ -27,7 +27,8 @@ def test_readiness_timeout_dumps_process_compose_diagnostics(monkeypatch):
 
     class _R:
         returncode = 0
-        stdout = "garage-server\npostgres-server\nmariadb-server\n"
+        # `process list -o json` emits a JSON array of process objects.
+        stdout = '[{"name": "garage-server"}, {"name": "postgres-server"}, {"name": "mariadb-server"}]'
         stderr = ""
 
     def fake_run(cmd, **kwargs):
@@ -43,6 +44,20 @@ def test_readiness_timeout_dumps_process_compose_diagnostics(monkeypatch):
         d.ensure_up(timeout=0)
 
     joined = [" ".join(str(p) for p in c) for c in commands]
-    assert any("process" in j and "list" in j for j in joined), (
-        "diagnostics must include a process-compose process list"
+    assert any("process" in j and "list" in j and "json" in j for j in joined), (
+        "diagnostics must include a process-compose process list as JSON"
     )
+    # The parsed names must drive per-process log fetches.
+    assert any("process" in j and "logs" in j and "garage-server" in j for j in joined), (
+        "diagnostics must fetch per-process logs for each parsed process"
+    )
+
+
+def test_parse_process_names_handles_shapes():
+    assert deps_mod._parse_process_names('[{"name": "a"}, {"name": "b"}]') == ["a", "b"]
+    # `{"data": [...]}` envelope is also accepted.
+    assert deps_mod._parse_process_names('{"data": [{"name": "a"}]}') == ["a"]
+    # Malformed / empty / wrong-shape input degrades to [].
+    assert deps_mod._parse_process_names("not json") == []
+    assert deps_mod._parse_process_names("") == []
+    assert deps_mod._parse_process_names('{"nope": 1}') == []

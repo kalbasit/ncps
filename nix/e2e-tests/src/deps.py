@@ -8,6 +8,7 @@ reachable, an externally-managed stack is assumed and left untouched.
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -46,6 +47,23 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
 
 def _all_ports_ready(ports: List[int]) -> bool:
     return all(_port_open(p) for p in ports)
+
+
+def _parse_process_names(raw: str) -> List[str]:
+    """Extract process names from `process list -o json`.
+
+    Tolerates both a top-level JSON array and a ``{"data": [...]}`` envelope, and
+    returns ``[]`` on any malformed/empty input (diagnostics are best-effort).
+    """
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if isinstance(data, dict):
+        data = data.get("data", [])
+    if not isinstance(data, list):
+        return []
+    return [p["name"] for p in data if isinstance(p, dict) and "name" in p]
 
 
 class Deps:
@@ -103,8 +121,11 @@ class Deps:
         log("deps: services not ready — process-compose state follows:", R)
         names: List[str] = []
         try:
+            # `-o json`: the default `process list` prints a formatted table whose
+            # header/border rows would be mis-parsed as process names; JSON is the
+            # stable machine-readable form.
             listing = subprocess.run(
-                ["nix", "run", ".#deps", "--", "process", "list", "-p", str(PC_PORT)],
+                ["nix", "run", ".#deps", "--", "process", "list", "-o", "json", "-p", str(PC_PORT)],
                 cwd=REPO_ROOT,
                 check=False,
                 capture_output=True,
@@ -112,7 +133,7 @@ class Deps:
                 timeout=30,
             )
             log((listing.stdout or "") + (listing.stderr or ""), R)
-            names = [ln.strip() for ln in (listing.stdout or "").splitlines() if ln.strip()]
+            names = _parse_process_names(listing.stdout or "")
         except Exception as e:  # noqa: BLE001 — diagnostics are best-effort
             log(f"deps: could not list processes: {e}", R)
         for name in names:

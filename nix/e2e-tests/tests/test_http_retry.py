@@ -81,6 +81,12 @@ def test_persistent_connection_error_raises():
         http_retry.get_with_retry(do_get, attempts=3, backoff=0, sleep=lambda _s: None)
 
 
+def test_invalid_attempts_raises_valueerror():
+    """attempts < 1 would skip the loop and `raise None`; guard it up front."""
+    with pytest.raises(ValueError):
+        http_retry.get_with_retry(lambda: _Resp(200), attempts=0)
+
+
 def test_backoff_is_bounded_and_sleeps_between_attempts():
     slept = []
 

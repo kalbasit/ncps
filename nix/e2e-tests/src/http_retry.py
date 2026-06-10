@@ -26,6 +26,8 @@ def get_with_retry(do_get, *, attempts: int = 5, backoff: float = 1.0, sleep=tim
     every attempt raised, re-raises the last exception. Backoff is exponential
     and capped at 10s between attempts.
     """
+    if attempts < 1:
+        raise ValueError("attempts must be >= 1")
     last_exc: BaseException | None = None
     resp = None
     for i in range(attempts):
