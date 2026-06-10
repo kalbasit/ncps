@@ -35,6 +35,8 @@ try:
 except ImportError:
     boto3 = None
 
+from http_retry import get_with_retry
+
 HTTP_TIMEOUT = 60
 
 
@@ -564,9 +566,13 @@ class NCPSTester:
             # Test first 3 hashes
             for narinfo_hash in test_hashes[:3]:
                 try:
-                    # Fetch narinfo
-                    resp = requests.get(
-                        f"{base_url}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
+                    # Fetch narinfo. Retry transient post-deploy 5xx/connection
+                    # errors: ncps can be up (healthz ok) yet briefly 5xx a
+                    # narinfo during warm-up/seeding.
+                    resp = get_with_retry(
+                        lambda: requests.get(
+                            f"{base_url}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
+                        )
                     )
                     if resp.status_code != 200:
                         return TestResult(
@@ -591,10 +597,12 @@ class NCPSTester:
 
                     nar_url = url_match.group(1).strip()
 
-                    # Fetch the NAR file
+                    # Fetch the NAR file (same transient-error tolerance).
                     if self.verbose:
                         print(f"      ✓ Fetching {nar_url}")
-                    resp = requests.get(f"{base_url}/{nar_url}", timeout=HTTP_TIMEOUT)
+                    resp = get_with_retry(
+                        lambda: requests.get(f"{base_url}/{nar_url}", timeout=HTTP_TIMEOUT)
+                    )
                     if resp.status_code != 200:
                         return TestResult(
                             "HTTP Endpoints",

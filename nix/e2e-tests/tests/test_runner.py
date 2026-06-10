@@ -12,6 +12,8 @@ import runner
 class _FakeScenario:
     name: str
     modes: List[str]
+    staging: bool = False
+    replicas: int = 1
 
     def supports(self, mode: str) -> bool:
         return mode in self.modes
@@ -28,8 +30,11 @@ def _fake_catalog():
 def _patch(monkeypatch, statuses):
     """Patch catalog + per-scenario execution; statuses maps name -> result."""
     monkeypatch.setattr(runner, "load_catalog", _fake_catalog)
+    # Neutralize the shared local-deps lifecycle so these aggregation tests never
+    # touch real backends.
+    monkeypatch.setattr(runner, "_make_local_deps", lambda scenarios: None)
 
-    def fake_execute(scenario, mode, verbose):
+    def fake_execute(scenario, mode, verbose, shared_deps=None):
         return statuses[scenario.name]
 
     monkeypatch.setattr(runner, "_execute", fake_execute)
@@ -146,7 +151,7 @@ def test_all_selects_every_scenario(monkeypatch):
     seen = []
     monkeypatch.setattr(runner, "load_catalog", _fake_catalog)
 
-    def fake_execute(scenario, mode, verbose):
+    def fake_execute(scenario, mode, verbose, shared_deps=None):
         seen.append(scenario.name)
         return "PASS"
 
@@ -159,8 +164,10 @@ def test_all_selects_every_scenario(monkeypatch):
 def test_explicit_names_run_only_those(monkeypatch):
     seen = []
     monkeypatch.setattr(runner, "load_catalog", _fake_catalog)
+    # Neutralize the shared local-deps lifecycle for this local-mode aggregation.
+    monkeypatch.setattr(runner, "_make_local_deps", lambda scenarios: None)
 
-    def fake_execute(scenario, mode, verbose):
+    def fake_execute(scenario, mode, verbose, shared_deps=None):
         seen.append(scenario.name)
         return "PASS"
 
@@ -168,6 +175,56 @@ def test_explicit_names_run_only_those(monkeypatch):
     rc = runner.run_scenarios(mode="local", scenario_names=["alpha", "bravo"])
     assert rc == 0
     assert seen == ["alpha", "bravo"]
+
+
+def test_local_multi_scenario_starts_deps_once(monkeypatch):
+    """A local --all run starts the managed backends once before the loop and
+    tears them down once after — not per scenario — and includes Redis when any
+    selected scenario needs it."""
+    counts = {"created": 0, "ensure_up": 0, "teardown": 0, "needs_redis": None}
+
+    class _SpyDeps:
+        def __init__(self, *, needs_redis=False):
+            counts["created"] += 1
+            counts["needs_redis"] = needs_redis
+
+        def ensure_up(self, timeout=300):
+            counts["ensure_up"] += 1
+
+        def teardown(self):
+            counts["teardown"] += 1
+
+    import deps as deps_mod
+
+    monkeypatch.setattr(deps_mod, "Deps", _SpyDeps)
+
+    def _catalog():
+        return [
+            _FakeScenario("alpha", ["local", "kubernetes"]),
+            _FakeScenario("bravo", ["local", "kubernetes"], replicas=2),  # needs redis
+            _FakeScenario("charlie", ["kubernetes"]),  # local-unsupported
+        ]
+
+    monkeypatch.setattr(runner, "load_catalog", _catalog)
+
+    seen_shared = []
+
+    def fake_run_local(scenario, verbose, shared_deps=None):
+        seen_shared.append(shared_deps)
+        return 0
+
+    monkeypatch.setattr(runner, "_run_local", fake_run_local)
+
+    rc = runner.run_scenarios(mode="local", scenario_names=None)
+    assert rc == 0
+    assert counts["created"] == 1, "deps constructed exactly once"
+    assert counts["ensure_up"] == 1, "backends started exactly once"
+    assert counts["teardown"] == 1, "backends torn down exactly once"
+    assert counts["needs_redis"] is True, "redis included because a scenario needs it"
+    # Both local-supported scenarios received the shared deps (so _run_local does
+    # not start its own); charlie skipped before reaching _run_local.
+    assert len(seen_shared) == 2
+    assert all(s is not None for s in seen_shared)
 
 
 def test_any_failure_makes_exit_nonzero(monkeypatch):

@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: "0 4 * * *" # 04:00 UTC nightly
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (branch/tag/SHA) to check out and test. Defaults to main."
+        required: false
+        default: main
 permissions:
   contents: read
 concurrency:
@@ -23,9 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          # Scheduled runs and the default dispatch test `main`; a manual dispatch
+          # may override `ref` to test a branch/tag/SHA (e.g. a PR branch).
+          ref: ${{ inputs.ref || 'main' }}
           persist-credentials: false
-      - name: Resolve current main SHA
+      - name: Resolve tested SHA
         id: resolve
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Probe last-tested cache key

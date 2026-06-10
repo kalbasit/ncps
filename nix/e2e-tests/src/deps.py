@@ -60,7 +60,10 @@ class Deps:
         ]
         self._started = False
 
-    def ensure_up(self, timeout: int = 120) -> None:
+    # 300s (not 120s): a cold all-backend boot — postgres `initdb`, mariadb
+    # `mariadb-install-db`, garage layout, each into a fresh `mktemp` data dir —
+    # can exceed two minutes on a resource-constrained CI runner.
+    def ensure_up(self, timeout: int = 300) -> None:
         if _all_ports_ready(self.ports):
             log("deps: backends already reachable; leaving them as-is", Y)
             return
@@ -87,7 +90,44 @@ class Deps:
                 log("deps: all services ready", G)
                 return
             time.sleep(2)
+        # Surface which backend is unhealthy instead of an opaque timeout, so a
+        # CI failure is diagnosable from the logs alone.
+        self._dump_diagnostics()
         raise RuntimeError(f"deps: services not ready within {timeout}s")
+
+    def _dump_diagnostics(self) -> None:
+        """Best-effort dump of process-compose state + per-process logs.
+
+        Never raises: a diagnostics failure must not mask the readiness error.
+        """
+        log("deps: services not ready — process-compose state follows:", R)
+        names: List[str] = []
+        try:
+            listing = subprocess.run(
+                ["nix", "run", ".#deps", "--", "process", "list", "-p", str(PC_PORT)],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            log((listing.stdout or "") + (listing.stderr or ""), R)
+            names = [ln.strip() for ln in (listing.stdout or "").splitlines() if ln.strip()]
+        except Exception as e:  # noqa: BLE001 — diagnostics are best-effort
+            log(f"deps: could not list processes: {e}", R)
+        for name in names:
+            try:
+                logs = subprocess.run(
+                    ["nix", "run", ".#deps", "--", "process", "logs", name, "--tail", "100", "-p", str(PC_PORT)],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                log(f"deps: --- {name} logs ---\n{(logs.stdout or '')}{(logs.stderr or '')}", R)
+            except Exception as e:  # noqa: BLE001 — diagnostics are best-effort
+                log(f"deps: could not fetch logs for {name}: {e}", R)
 
     def teardown(self) -> None:
         if not self._started:
