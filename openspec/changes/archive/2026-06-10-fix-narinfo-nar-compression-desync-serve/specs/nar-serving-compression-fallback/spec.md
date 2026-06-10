@@ -1,0 +1,30 @@
+## ADDED Requirements
+
+### Requirement: Serve uncompressed NAR from any stored whole-file compression
+
+The system SHALL satisfy a `Compression: none` NAR request from a locally-present whole-file NAR regardless of which supported compression it is physically stored as, by transparently decompressing the stored file. A NAR that exists on disk MUST NOT be reported absent (404) or re-downloaded solely because its stored whole-file compression differs from the requested `none` compression.
+
+#### Scenario: none request served by decompressing a stored xz whole file
+
+- **WHEN** a NAR is stored only as a whole-file `.nar.xz` (its narinfo advertises `Compression: none`) and a client requests `/nar/<hash>.nar`
+- **THEN** the system streams the NAR decompressed from the stored `.nar.xz` file and reports its compression as `none`, without contacting any upstream
+
+#### Scenario: none request still served from the canonical zstd encoding
+
+- **WHEN** a NAR is stored as the canonical `.nar.zst` encoding and a client requests `/nar/<hash>.nar`
+- **THEN** the system streams the NAR decompressed from the `.nar.zst` file and reports its compression as `none`
+
+#### Scenario: existence check reports present for a compressed whole file
+
+- **WHEN** the servability/existence check runs for a `Compression: none` request and only a compressed whole file (e.g. `.nar.xz`) is on disk
+- **THEN** the check reports the NAR present so the request is served from local storage rather than triggering a re-download
+
+#### Scenario: matching-compression request served as-is
+
+- **WHEN** a client requests a compression that matches a stored whole file (e.g. `/nar/<hash>.nar.xz` for an `.nar.xz` file)
+- **THEN** the system streams the stored bytes as-is and reports that compression, without decompressing
+
+#### Scenario: LRU touch follows the served bytes
+
+- **WHEN** a `Compression: none` request is served by decompressing a stored compressed whole file whose own `nar_file` row exists but no `none` row exists
+- **THEN** the system updates the last-accessed time on the stored compression's `nar_file` row and does not create a spurious `none` row
