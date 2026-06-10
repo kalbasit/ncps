@@ -319,6 +319,18 @@ def make_proxy_handler(backends):
     lock = threading.Lock()
 
     class ProxyHandler(http.server.BaseHTTPRequestHandler):
+        # Speak HTTP/1.1 so client connections are persistent and reused across
+        # requests. `nix copy` (libcurl) pushes a large closure over a small
+        # pool of keep-alive connections; an HTTP/1.0 proxy force-closes after
+        # every request, forcing a brand-new TCP connection per object
+        # (thousands for a big closure). That churn intermittently resets an
+        # upload before the proxy ever handles it (`curl error 56`), aborting
+        # the copy. HTTP/1.1 also makes BaseHTTPRequestHandler auto-answer
+        # `Expect: 100-continue` (it gates that on protocol_version >= 1.1),
+        # removing the ~1s-per-PUT stall. Response framing is handled in
+        # `_proxy` so a reused connection never desyncs.
+        protocol_version = "HTTP/1.1"
+
         # Quiet: the instances do their own logging.
         def log_message(self, *_args):
             pass
@@ -493,12 +505,37 @@ def make_proxy_handler(backends):
                 # body). Drop any header carrying embedded CRLF to prevent
                 # response splitting.
                 self.send_response_only(resp.status, resp.reason)
+                has_length = False
                 for key, value in resp.getheaders():
-                    if key.lower() in HOP_BY_HOP_HEADERS:
+                    lowered = key.lower()
+                    if lowered in HOP_BY_HOP_HEADERS:
                         continue
                     if not _is_safe_header(key, value):
                         continue
+                    if lowered == "content-length":
+                        has_length = True
                     self.send_header(key, value)
+                # Keep a persistent connection only if the response is framed so
+                # the next request stays in sync. 204/304, responses to HEAD,
+                # and 1xx carry no body; anything else needs a Content-Length.
+                # When the body length is unknown (e.g. the backend used
+                # Transfer-Encoding: chunked, stripped above as hop-by-hop),
+                # signal close so the client reads to EOF instead of mis-framing
+                # the following response.
+                bodiless = (
+                    resp.status in (204, 304)
+                    or self.command == "HEAD"
+                    or 100 <= resp.status < 200
+                )
+                # Advertise the close when we will close for any reason — an
+                # unframed body (above), or the connection was already marked to
+                # close (e.g. the client sent `Connection: close`, or it is an
+                # HTTP/1.0 client). RFC 7230 §6.3 requires the server to send
+                # `Connection: close` in that case so a keep-alive client does
+                # not assume the connection persists and reuse it.
+                if self.close_connection or (not has_length and not bodiless):
+                    self.send_header("Connection", "close")
+                    self.close_connection = True
                 self.end_headers()
                 try:
                     shutil.copyfileobj(resp, self.wfile, PROXY_BUFFER)
@@ -519,13 +556,21 @@ def make_proxy_handler(backends):
     return ProxyHandler
 
 
+class _ProxyServer(http.server.ThreadingHTTPServer):
+    # Absorb connection-establishment bursts: `nix copy` opens many connections
+    # in parallel, and the stdlib default backlog of 5 is too small. Must be a
+    # class attribute so it takes effect during server_activate() (listen()),
+    # which runs inside __init__ — setting it on the instance afterwards is too
+    # late. Defense-in-depth alongside HTTP/1.1 keep-alive, which already
+    # collapses the per-object connection churn.
+    request_queue_size = 256
+
+
 def start_proxy(host, port, backends):
     """Start a threaded round-robin reverse proxy and return the server.
 
     Raises OSError if the address cannot be bound (e.g. the port is in use)."""
-    server = http.server.ThreadingHTTPServer(
-        (host, port), make_proxy_handler(backends)
-    )
+    server = _ProxyServer((host, port), make_proxy_handler(backends))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
