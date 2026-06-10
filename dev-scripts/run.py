@@ -527,7 +527,13 @@ def make_proxy_handler(backends):
                     or self.command == "HEAD"
                     or 100 <= resp.status < 200
                 )
-                if not has_length and not bodiless:
+                # Advertise the close when we will close for any reason — an
+                # unframed body (above), or the connection was already marked to
+                # close (e.g. the client sent `Connection: close`, or it is an
+                # HTTP/1.0 client). RFC 7230 §6.3 requires the server to send
+                # `Connection: close` in that case so a keep-alive client does
+                # not assume the connection persists and reuse it.
+                if self.close_connection or (not has_length and not bodiless):
                     self.send_header("Connection", "close")
                     self.close_connection = True
                 self.end_headers()

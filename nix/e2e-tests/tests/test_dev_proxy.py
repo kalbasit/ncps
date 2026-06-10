@@ -329,6 +329,38 @@ def test_expect_100_continue_is_answered():
         backend.shutdown()
 
 
+def test_client_connection_close_is_echoed():
+    # RFC 7230 §6.3: when the proxy will close the connection — e.g. the client
+    # asked with `Connection: close` — it MUST advertise `Connection: close` in
+    # the response, even for an otherwise-reusable (delimitable) response, so a
+    # keep-alive client does not assume the connection persists and reuse it.
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=10)
+        sock.settimeout(10)
+        try:
+            body = b"X" * 100
+            sock.sendall(
+                b"PUT /upload/nar/close_case.nar.zst HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"X-Test-Case: close_case\r\n"
+                + f"Content-Length: {len(body)}\r\n".encode()
+                + b"Connection: close\r\n\r\n"
+                + body
+            )
+            status, headers, _leftover = _read_response_head(sock)
+            assert status is not None and b"204" in status, status
+            assert headers.get(b"connection", b"").lower() == b"close", headers
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
+
+
 def test_unframed_response_forces_connection_close():
     # If the backend response has no Content-Length and is not bodiless, the
     # proxy cannot keep the connection in sync for a following request, so it
