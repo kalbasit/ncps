@@ -677,84 +677,68 @@ class NCPSTester:
             # When using debug with --target, access target's filesystem via /proc/1/root
             target_db_path = f"/proc/1/root{db_path}"
 
-            # Copy the database and its WAL files to /tmp before querying.
-            # With WAL mode enabled, recent writes live in ncps.db-wal and are not yet
-            # checkpointed into the main ncps.db file. Copying only the .db file would
-            # show empty tables. Copying all three files (-wal and -shm may not exist if
-            # nothing is pending, hence the || true) gives SQLite a consistent view.
-            # Using nouchka/sqlite3 image which has sqlite pre-installed
-            result = subprocess.run(
-                [
-                    "kubectl",
-                    "debug",
-                    "-n",
-                    namespace,
-                    pod_name,
-                    "--target=ncps",
-                    "--image=nouchka/sqlite3:latest",
-                    "-it=false",
-                    "--quiet",
-                    # No --profile=restricted: it sets runAsNonRoot on the
-                    # ephemeral container, which the kubelet rejects because the
-                    # nouchka/sqlite3 image runs as root ("container has
-                    # runAsNonRoot and image will run as root" -> the debug
-                    # container never starts and the probe times out). Match the
-                    # storage probe, which uses the default profile.
-                    "--",
-                    "sh",
-                    "-c",
-                    f"cp {target_db_path} /tmp/test.db && cp {target_db_path}-wal /tmp/test.db-wal 2>/dev/null || true && cp {target_db_path}-shm /tmp/test.db-shm 2>/dev/null || true && sqlite3 /tmp/test.db '.tables'",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if result.returncode != 0:
-                return TestResult(
-                    "Database",
-                    False,
-                    f"Failed to access SQLite database at {db_path}",
-                    details=f"Return code: {result.returncode}\nstderr: {result.stderr}\nstdout: {result.stdout}",
+            # Snapshot the live DB with SQLite's online backup, which yields a
+            # WAL-consistent copy. The previous approach copied ncps.db,
+            # ncps.db-wal and ncps.db-shm as three separate files; a checkpoint
+            # landing between the copies (main file copied pre-checkpoint without
+            # the table, WAL then truncated) produced a snapshot missing freshly
+            # written tables — a flaky "nar_files not found" even though the live
+            # DB clearly has it (the HTTP narinfo probe, which reads nar_files,
+            # passes). `.backup` coordinates with WAL and concurrent writers.
+            # nouchka/sqlite3 ships sqlite3; no --profile=restricted because it
+            # sets runAsNonRoot, which the kubelet rejects for that root image
+            # (the debug container never starts and the probe times out).
+            def _sqlite(query_arg: str) -> subprocess.CompletedProcess:
+                return subprocess.run(
+                    [
+                        "kubectl",
+                        "debug",
+                        "-n",
+                        namespace,
+                        pod_name,
+                        "--target=ncps",
+                        "--image=nouchka/sqlite3:latest",
+                        "-it=false",
+                        "--quiet",
+                        "--",
+                        "sh",
+                        "-c",
+                        f"sqlite3 {target_db_path} \".backup '/tmp/test.db'\" "
+                        f"&& sqlite3 /tmp/test.db {query_arg}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
 
-            tables_output = result.stdout.strip()
-
-            if "nar_files" not in tables_output:
+            # Retry the table check: a snapshot taken in the brief window before
+            # a migration/write commits can miss the table. The data is present
+            # once serving has begun, so a few attempts converge.
+            last = None
+            tables_output = ""
+            for _attempt in range(5):
+                last = _sqlite("'.tables'")
+                if last.returncode == 0 and "nar_files" in last.stdout:
+                    tables_output = last.stdout.strip()
+                    break
+                time.sleep(3)
+            else:
+                if last is not None and last.returncode != 0:
+                    return TestResult(
+                        "Database",
+                        False,
+                        f"Failed to access SQLite database at {db_path}",
+                        details=f"Return code: {last.returncode}\nstderr: {last.stderr}\nstdout: {last.stdout}",
+                    )
                 return TestResult(
                     "Database",
                     False,
-                    f"Expected 'nar_files' table not found in SQLite database",
-                    details=f"Tables found: '{tables_output}'",
+                    "Expected 'nar_files' table not found in SQLite database",
+                    details=f"Tables found: '{(last.stdout if last else '').strip()}'",
                 )
 
             # Count rows
-            result = subprocess.run(
-                [
-                    "kubectl",
-                    "debug",
-                    "-n",
-                    namespace,
-                    pod_name,
-                    "--target=ncps",
-                    "--image=nouchka/sqlite3:latest",
-                    "-it=false",
-                    "--quiet",
-                    # No --profile=restricted: it sets runAsNonRoot on the
-                    # ephemeral container, which the kubelet rejects because the
-                    # nouchka/sqlite3 image runs as root ("container has
-                    # runAsNonRoot and image will run as root" -> the debug
-                    # container never starts and the probe times out). Match the
-                    # storage probe, which uses the default profile.
-                    "--",
-                    "sh",
-                    "-c",
-                    f"cp {target_db_path} /tmp/test.db && cp {target_db_path}-wal /tmp/test.db-wal 2>/dev/null || true && cp {target_db_path}-shm /tmp/test.db-shm 2>/dev/null || true && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nar_files;'",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            result = _sqlite("'SELECT COUNT(*) FROM nar_files;'")
 
             if result.returncode != 0:
                 return TestResult(
