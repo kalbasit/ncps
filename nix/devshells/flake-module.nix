@@ -6,8 +6,8 @@
       pkgs,
       ...
     }:
-    {
-      devShells.default = pkgs.mkShell {
+    let
+      defaultShell = pkgs.mkShell {
         buildInputs =
           (import ../dev-packages.nix pkgs)
           ++ [
@@ -182,5 +182,19 @@
           echo ""
         '';
       };
+    in
+    {
+      devShells.default = defaultShell;
+
+      # CI-only shell for the local-mode e2e nightly. dev-scripts/run.py
+      # launches each ncps replica via `direnv exec <repo>`, so direnv must be
+      # on PATH. It is deliberately NOT in the default shell: developers use
+      # their host direnv (with their own shellrc hooks/config), and bundling it
+      # in the default shell would shadow that. This sibling layers only direnv
+      # on top of the default toolchain so `nix develop .#ci-e2e-local` is
+      # self-contained for CI without affecting local development.
+      devShells.ci-e2e-local = defaultShell.overrideAttrs (old: {
+        buildInputs = old.buildInputs ++ [ pkgs.direnv ];
+      });
     };
 }

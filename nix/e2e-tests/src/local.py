@@ -35,6 +35,31 @@ from harness_config import (
 )
 
 
+_direnv_allowed = False
+
+
+def _allow_direnv_once() -> None:
+    """Allow the repo's ``.envrc`` once so run.py's ``direnv exec`` can load the
+    flake env on a fresh checkout (e.g. CI). Best-effort and idempotent; a
+    developer's already-allowed repo just gets a harmless refresh."""
+    global _direnv_allowed
+    if _direnv_allowed:
+        return
+    try:
+        result = subprocess.run(
+            ["direnv", "allow", REPO_ROOT], cwd=REPO_ROOT, check=False, timeout=30
+        )
+        # Latch only on success so a transient failure is retried on the next
+        # start (e.g. a restart within a scenario) rather than wedging the rest
+        # of the run.
+        if result.returncode == 0:
+            _direnv_allowed = True
+        else:
+            log("local: 'direnv allow' returned non-zero (will retry later)", Y)
+    except Exception as e:  # noqa: BLE001 — best-effort
+        log(f"local: 'direnv allow' failed (ignored): {e}", Y)
+
+
 class LocalDeployment:
     """A run.py-backed deployment of one scenario."""
 
@@ -57,6 +82,8 @@ class LocalDeployment:
         return [BASE_PORT + i for i in range(self.replicas)]
 
     def _start(self, *, clean: bool, cdc: bool, lazy: bool) -> None:
+        # run.py launches ncps via `direnv exec`; ensure the .envrc is allowed.
+        _allow_direnv_once()
         args = [
             PYTHON,
             RUN_PY,
@@ -103,6 +130,7 @@ class LocalDeployment:
         pending = set(self._ports())
         while time.time() < deadline:
             if self._proc.poll() is not None:
+                self._dump_logs()
                 raise RuntimeError(
                     f"local: run.py exited with code {self._proc.returncode} "
                     "before all replicas became ready (see var/log/e2e-run.py.log)"
@@ -119,7 +147,26 @@ class LocalDeployment:
                 log(f"local: all {self.replicas} replica(s) ready", G)
                 return
             time.sleep(1)
+        self._dump_logs()
         raise RuntimeError(f"local: replicas not ready within {timeout}s: {sorted(pending)}")
+
+    def _dump_logs(self) -> None:
+        """Best-effort: echo run.py's harness log and each replica's ncps log so
+        a CI failure shows *why* ncps did not come up. Never raises."""
+        try:
+            if self._harness_log is not None:
+                self._harness_log.flush()
+        except Exception:  # noqa: BLE001 — diagnostics are best-effort
+            pass
+        paths = [os.path.join(LOG_DIR, "e2e-run.py.log")]
+        paths += [os.path.join(LOG_DIR, f"ncps-{p}.log") for p in self._ports()]
+        for path in paths:
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    content = f.read().strip()
+            except OSError:
+                content = "(no log file)"
+            log(f"local: --- {os.path.basename(path)} ---\n{content or '(empty)'}", R)
 
     def _stop(self) -> None:
         if self._proc is not None and self._proc.poll() is None:

@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: "0 4 * * *" # 04:00 UTC nightly
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (branch/tag/SHA) to check out and test. Defaults to main."
+        required: false
+        default: main
 permissions:
   contents: read
 concurrency:
@@ -23,9 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          # Scheduled runs and the default dispatch test `main`; a manual dispatch
+          # may override `ref` to test a branch/tag/SHA (e.g. a PR branch).
+          ref: ${{ inputs.ref || 'main' }}
           persist-credentials: false
-      - name: Resolve current main SHA
+      - name: Resolve tested SHA
         id: resolve
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Probe last-tested cache key
@@ -70,7 +77,17 @@ jobs:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run e2e catalog (${{ matrix.mode }})
-        run: nix run .#e2e -- --mode ${{ matrix.mode }} --all
+        run: |
+          if [ "${{ matrix.mode }}" = "local" ]; then
+            # Local mode drives dev-scripts/run.py, which launches each ncps
+            # replica via watchexec + `direnv exec` + `go run` (cgo needs gcc).
+            # Run it inside the CI dev shell (default toolchain + direnv) so the
+            # leg is self-contained; local.py runs `direnv allow` itself.
+            nix develop .#ci-e2e-local --command bash -c 'nix run .#e2e -- --mode local --all'
+          else
+            # Kubernetes mode is self-contained in the e2e wrapper (kubectl/helm/kind).
+            nix run .#e2e -- --mode kubernetes --all
+          fi
   record:
     needs: [gate, e2e]
     # Only record the tested SHA after a fully successful matrix run, so a

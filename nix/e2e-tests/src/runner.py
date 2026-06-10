@@ -14,8 +14,13 @@ from harness_config import AssertionFailure, G, R, Y, log, section
 from phases import get_phase
 
 
-def _execute(scenario, mode: str, verbose: bool) -> str:
-    """Run one scenario in one mode, returning 'PASS' | 'FAIL' | 'SKIP'."""
+def _execute(scenario, mode: str, verbose: bool, shared_deps=None) -> str:
+    """Run one scenario in one mode, returning 'PASS' | 'FAIL' | 'SKIP'.
+
+    ``shared_deps`` is the run-scoped local backends started once by
+    ``run_scenarios``; when provided, ``_run_local`` reuses them instead of
+    starting/stopping its own.
+    """
     # SKIP (not FAIL, not PASS) when the topology can't be expressed in this mode.
     if not scenario.supports(mode):
         log(
@@ -26,7 +31,7 @@ def _execute(scenario, mode: str, verbose: bool) -> str:
         return "SKIP"
 
     if mode == "local":
-        rc = _run_local(scenario, verbose)
+        rc = _run_local(scenario, verbose, shared_deps=shared_deps)
     elif mode == "kubernetes":
         rc = _run_kubernetes(scenario, verbose)
     else:
@@ -67,13 +72,56 @@ def run_scenarios(*, mode: str, scenario_names, verbose: bool = False) -> int:
                 log(str(e), R)
                 return 2
 
+    # In local mode start the managed backends ONCE for the whole run (not per
+    # scenario): each backend boots cold into a fresh `mktemp` data dir, so a
+    # per-scenario restart pays a full cold boot every time and races the
+    # readiness timeout on a slow runner. The single startup includes Redis if
+    # any selected scenario needs it.
+    shared_deps = _shared_local_deps(mode, selected)
     results = []
-    for scenario in selected:
-        status = _execute(scenario, mode, verbose)
-        results.append((scenario.name, status))
+    try:
+        if shared_deps is not None:
+            try:
+                shared_deps.ensure_up()
+            except Exception as e:  # noqa: BLE001 — report as a run failure, not a traceback
+                log(f"ERROR [local]: backing services not ready: {e}", R)
+                return 1
+        for scenario in selected:
+            status = _execute(scenario, mode, verbose, shared_deps=shared_deps)
+            results.append((scenario.name, status))
+    finally:
+        if shared_deps is not None:
+            shared_deps.teardown()
 
     _print_summary(mode, results)
     return 1 if any(status == "FAIL" for _, status in results) else 0
+
+
+def _shared_local_deps(mode: str, selected):
+    """Build the run-scoped backends for a local run, or None.
+
+    Returns None for non-local mode or when no selected scenario can run locally.
+    """
+    if mode != "local":
+        return None
+    local_selected = [s for s in selected if s.supports("local")]
+    if not local_selected:
+        return None
+    return _make_local_deps(local_selected)
+
+
+def _make_local_deps(scenarios):
+    """Construct the shared ``Deps`` for the given local-supported scenarios.
+
+    Redis is included if ANY scenario needs it (staging or multi-replica), since
+    one shared backend set serves every scenario in the run.
+    """
+    from deps import Deps
+
+    needs_redis = any(
+        getattr(s, "staging", False) or getattr(s, "replicas", 1) > 1 for s in scenarios
+    )
+    return Deps(needs_redis=needs_redis)
 
 
 def _print_summary(mode: str, results) -> None:
@@ -90,18 +138,26 @@ def _print_summary(mode: str, results) -> None:
     )
 
 
-def _run_local(scenario, verbose: bool) -> int:
+def _run_local(scenario, verbose: bool, shared_deps=None) -> int:
     from deps import Deps
     from local import LocalDeployment
 
-    needs_redis = scenario.staging or scenario.replicas > 1
-    deps = Deps(needs_redis=needs_redis)
+    # When the caller (a multi-scenario run) already started the backends, reuse
+    # them and leave their lifecycle to the caller. Only the single-scenario path
+    # owns (starts and stops) its own backends.
+    owns_deps = shared_deps is None
+    if owns_deps:
+        needs_redis = scenario.staging or scenario.replicas > 1
+        deps = Deps(needs_redis=needs_redis)
+    else:
+        deps = shared_deps
     deployment = LocalDeployment(scenario)
     phase = get_phase(scenario.phase)
 
     rc = 0
     try:
-        deps.ensure_up()
+        if owns_deps:
+            deps.ensure_up()
         deployment.provision()
         phase(deployment, scenario)
         section(f"PASS {scenario.name} [local]")
@@ -114,7 +170,8 @@ def _run_local(scenario, verbose: bool) -> int:
         rc = 1
     finally:
         deployment.teardown()
-        deps.teardown()
+        if owns_deps:
+            deps.teardown()
     return rc
 
 
