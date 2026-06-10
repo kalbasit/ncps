@@ -570,8 +570,8 @@ class NCPSTester:
                     # errors: ncps can be up (healthz ok) yet briefly 5xx a
                     # narinfo during warm-up/seeding.
                     resp = get_with_retry(
-                        lambda: requests.get(
-                            f"{base_url}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
+                        lambda h=narinfo_hash: requests.get(
+                            f"{base_url}/{h}.narinfo", timeout=HTTP_TIMEOUT
                         )
                     )
                     if resp.status_code != 200:
@@ -601,7 +601,7 @@ class NCPSTester:
                     if self.verbose:
                         print(f"      ✓ Fetching {nar_url}")
                     resp = get_with_retry(
-                        lambda: requests.get(f"{base_url}/{nar_url}", timeout=HTTP_TIMEOUT)
+                        lambda u=nar_url: requests.get(f"{base_url}/{u}", timeout=HTTP_TIMEOUT)
                     )
                     if resp.status_code != 200:
                         return TestResult(
