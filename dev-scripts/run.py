@@ -384,7 +384,19 @@ def make_proxy_handler(backends):
             """Drain the unconsumed body, send an error, and close the
             connection so the client observes `code` rather than a TCP reset."""
             self.close_connection = True
-            self._drain_request_body(cl_remaining, is_chunked)
+            # Time-bound the drain: a client that stalls mid-upload must not
+            # block us in rfile.read()/readline() and prevent the 502. On
+            # timeout the socket raises (OSError), which _drain_request_body
+            # swallows, stopping the drain.
+            prev_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(0.25)
+                self._drain_request_body(cl_remaining, is_chunked)
+            finally:
+                try:
+                    self.connection.settimeout(prev_timeout)
+                except OSError:
+                    pass
             try:
                 self.send_error(code, message)
             except OSError:
@@ -452,7 +464,10 @@ def make_proxy_handler(backends):
                         while cl_remaining > 0:
                             chunk = self.rfile.read(min(PROXY_BUFFER, cl_remaining))
                             if not chunk:
-                                break
+                                # Client closed before sending the full body the
+                                # backend was told to expect; routing this to the
+                                # 502 path avoids hanging in getresponse().
+                                raise ProxyBodyError("truncated request body")
                             conn.send(chunk)
                             cl_remaining -= len(chunk)
                     elif is_chunked:

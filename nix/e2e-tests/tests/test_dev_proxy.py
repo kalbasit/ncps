@@ -174,3 +174,35 @@ def test_unreachable_backend_returns_502_not_reset(chunked):
         assert status == 502
     finally:
         proxy.shutdown()
+
+
+def test_truncated_content_length_body_returns_502_not_hang():
+    # A client that promises a Content-Length but closes early must not leave
+    # the proxy hanging in conn.getresponse() waiting on a backend that still
+    # expects the full body — it must surface a 502.
+    backend, backend_port = _start_capture_backend()
+    proxy = run.start_proxy("127.0.0.1", _free_port(), [f"127.0.0.1:{backend_port}"])
+    proxy_port = proxy.server_address[1]
+    try:
+        time.sleep(0.2)
+        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=10)
+        try:
+            # Declare 200000 bytes but send only 10, then half-close.
+            sock.sendall(
+                b"PUT /upload/nar/truncated.nar.zst HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"Content-Length: 200000\r\n"
+                b"\r\n"
+                b"XXXXXXXXXX"
+            )
+            sock.shutdown(socket.SHUT_WR)
+            # Read the status line; timeout (not hang) if the fix regresses.
+            sock.settimeout(10)
+            status_line = sock.recv(64)
+            assert status_line.startswith(b"HTTP/"), status_line
+            assert b" 502 " in status_line, status_line
+        finally:
+            sock.close()
+    finally:
+        proxy.shutdown()
+        backend.shutdown()
