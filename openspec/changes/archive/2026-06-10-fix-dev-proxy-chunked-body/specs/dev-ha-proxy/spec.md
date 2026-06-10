@@ -1,36 +1,4 @@
-# dev-ha-proxy Specification
-
-## Purpose
-
-Front the multiple `serve` instances spawned by `dev-scripts/run.py` in HA mode with a single round-robin reverse proxy, so a Nix client (or test driver) can target one stable endpoint instead of juggling per-instance ports. The proxy is a dev-harness convenience implemented with the Python standard library only.
-
-## Requirements
-
-### Requirement: Round-robin proxy fronts active instances in HA mode
-
-When `dev-scripts/run.py` starts more than one ncps instance (`--replicas > 1`), it SHALL start an HTTP reverse proxy bound to port `8500` that forwards each incoming request to one of the active ncps instances, selecting backends in round-robin order across requests.
-
-#### Scenario: Proxy starts in HA mode
-
-- **WHEN** `run.py` is invoked with `--replicas 2` (or more) and the instances start successfully
-- **THEN** an HTTP proxy is listening on `127.0.0.1:8500`
-- **AND** the set of backends equals the started instance ports (e.g. `8501`, `8502`)
-
-#### Scenario: Requests rotate across backends
-
-- **WHEN** multiple HTTP requests arrive at the proxy on port `8500`
-- **THEN** the proxy forwards consecutive requests to different instances in round-robin order
-- **AND** each request reaches exactly one backend instance
-
-### Requirement: Proxy is not started for single-instance runs
-
-When `run.py` starts exactly one ncps instance (`--replicas 1`, the default), it SHALL NOT start the port-`8500` proxy.
-
-#### Scenario: Single instance skips the proxy
-
-- **WHEN** `run.py` is invoked with the default `--replicas 1`
-- **THEN** no proxy is bound to port `8500`
-- **AND** the single instance is reachable directly on its own port
+## MODIFIED Requirements
 
 ### Requirement: Proxy streams request and response bodies
 
@@ -57,6 +25,8 @@ The proxy SHALL stream request and response bodies between client and backend ra
 - **AND** the backend does not receive an empty body
 - **AND** the proxy returns the backend's response to the client
 
+## ADDED Requirements
+
 ### Requirement: Proxy reports a clean error instead of resetting the client on backend failure
 
 When the proxy fails to forward a request to a backend (the backend is unreachable, or the connection breaks mid-forward), it SHALL return an HTTP `502` response to the client rather than abruptly resetting the client connection. To do so, the proxy SHALL ensure any unconsumed client request body is drained or the response is delivered such that the client observes the `502` status, not a `Connection reset by peer`.
@@ -82,27 +52,3 @@ The proxy SHALL log backend connection and body-forwarding failures so that dev-
 - **WHEN** the proxy encounters a backend connect failure or a body-forwarding error
 - **THEN** the proxy emits a log line identifying the failed backend and the error
 - **AND** the failure is not silently swallowed
-
-### Requirement: Proxy lifecycle is tied to run.py
-
-The proxy SHALL start and stop together with `run.py`. On `run.py` shutdown (SIGINT/SIGTERM or cleanup), the proxy SHALL be stopped and its listening port released.
-
-#### Scenario: Proxy shuts down with run.py
-
-- **WHEN** `run.py` receives a termination signal and runs its cleanup path
-- **THEN** the proxy stops accepting connections
-- **AND** port `8500` is released
-
-### Requirement: Proxy endpoint is discoverable in state.json
-
-When the proxy is started, `run.py` SHALL record its endpoint in `var/ncps/state.json` so test drivers and clients can discover the single HA entry point.
-
-#### Scenario: State file advertises the proxy
-
-- **WHEN** the proxy is started in HA mode
-- **THEN** `var/ncps/state.json` contains the proxy endpoint (host and port `8500`)
-
-#### Scenario: State file omits proxy when absent
-
-- **WHEN** `run.py` runs a single instance and starts no proxy
-- **THEN** `var/ncps/state.json` does not advertise a proxy endpoint

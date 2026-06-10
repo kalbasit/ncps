@@ -63,6 +63,11 @@ _: {
         cp -r ${./src} src
         cp -r ${./tests} tests
         cp ${./pytest.ini} pytest.ini
+        # The dev-proxy regression test drives the real dev-scripts/run.py
+        # proxy code, so make it available and point the test at it.
+        mkdir -p dev-scripts
+        cp ${../../dev-scripts/run.py} dev-scripts/run.py
+        export NCPS_RUN_PY="$PWD/dev-scripts/run.py"
         export PYTHONDONTWRITEBYTECODE=1
         ${pytestPython}/bin/python -m pytest tests -m "not catalog" -q
         touch $out

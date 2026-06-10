@@ -237,9 +237,55 @@ HOP_BY_HOP_HEADERS = frozenset(
 )
 
 
+class ProxyBodyError(Exception):
+    """Raised when the client request body cannot be read/forwarded intact
+    (e.g. malformed or truncated chunked framing). Turned into a 502 so the
+    client gets a real status instead of a silently dropped body."""
+
+
 def pick_backend(backends, counter):
     """Return the backend for a given request counter (round-robin)."""
     return backends[counter % len(backends)]
+
+
+def _stream_chunked_body(rfile, send):
+    """Decode a `Transfer-Encoding: chunked` request body from `rfile` and
+    re-emit it, chunk-framed, via `send` (bounded by PROXY_BUFFER so proxy
+    memory never scales with payload size). Ends with the zero-length
+    terminator. Raises ProxyBodyError on malformed/truncated framing."""
+    while True:
+        size_line = rfile.readline()
+        if not size_line:
+            raise ProxyBodyError("client closed before chunked terminator")
+        # Ignore any chunk extensions (the part after ';').
+        token = size_line.split(b";", 1)[0].strip()
+        try:
+            size = int(token, 16)
+        except ValueError as exc:
+            raise ProxyBodyError(f"invalid chunk size {token!r}") from exc
+        if size == 0:
+            # Consume optional trailers up to the terminating blank line.
+            # A clean EOF here means the terminator never arrived — that is a
+            # truncated body, not a valid end of stream.
+            while True:
+                trailer = rfile.readline()
+                if trailer == b"":
+                    raise ProxyBodyError("truncated chunked terminator")
+                if trailer in (b"\r\n", b"\n"):
+                    break
+            break
+        remaining = size
+        while remaining > 0:
+            piece = rfile.read(min(PROXY_BUFFER, remaining))
+            if not piece:
+                raise ProxyBodyError("truncated chunk body")
+            send(b"%X\r\n" % len(piece) + piece + b"\r\n")
+            remaining -= len(piece)
+        # Each chunk's data is followed by a CRLF; validate it rather than
+        # silently accepting malformed framing.
+        if rfile.read(2) != b"\r\n":
+            raise ProxyBodyError("invalid chunk terminator")
+    send(b"0\r\n\r\n")
 
 
 def _is_safe_header(name, value):
@@ -283,6 +329,79 @@ def make_proxy_handler(backends):
                 state["counter"] += 1
             return pick_backend(backends, counter)
 
+        def _drain_request_body(self, cl_remaining, is_chunked):
+            """Best-effort, bounded drain of the *unconsumed* request body.
+
+            A partially-read request body left in the socket makes
+            BaseHTTPRequestHandler reset the connection on return — the client
+            would see `Connection reset by peer` instead of the status. Drain
+            only what is still unread (`cl_remaining` bytes for a fixed-length
+            body, or the rest of the chunked stream), bounded so a huge upload
+            cannot be drained unboundedly."""
+            drain_cap = 8 * PROXY_BUFFER
+
+            def drain_fixed(remaining):
+                nonlocal drain_cap
+                while remaining > 0 and drain_cap > 0:
+                    n = min(PROXY_BUFFER, remaining, drain_cap)
+                    chunk = self.rfile.read(n)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    drain_cap -= len(chunk)
+
+            try:
+                if cl_remaining is not None:
+                    drain_fixed(cl_remaining)
+                elif is_chunked:
+                    # Continue decoding the chunked stream best-effort. On any
+                    # framing irregularity, stop — we are closing the
+                    # connection anyway.
+                    while drain_cap > 0:
+                        size_line = self.rfile.readline()
+                        if not size_line:
+                            break
+                        token = size_line.split(b";", 1)[0].strip()
+                        try:
+                            size = int(token, 16)
+                        except ValueError:
+                            break
+                        if size == 0:
+                            while True:
+                                trailer = self.rfile.readline()
+                                if trailer in (b"\r\n", b"\n", b""):
+                                    break
+                            break
+                        before = drain_cap
+                        drain_fixed(size)
+                        if before - drain_cap < size:
+                            break  # capped or truncated mid-chunk
+                        self.rfile.readline()  # trailing CRLF
+            except (OSError, ValueError):
+                pass
+
+        def _fail(self, code, message, cl_remaining=None, is_chunked=False):
+            """Drain the unconsumed body, send an error, and close the
+            connection so the client observes `code` rather than a TCP reset."""
+            self.close_connection = True
+            # Time-bound the drain: a client that stalls mid-upload must not
+            # block us in rfile.read()/readline() and prevent the 502. On
+            # timeout the socket raises (OSError), which _drain_request_body
+            # swallows, stopping the drain.
+            prev_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(0.25)
+                self._drain_request_body(cl_remaining, is_chunked)
+            finally:
+                try:
+                    self.connection.settimeout(prev_timeout)
+                except OSError:
+                    pass
+            try:
+                self.send_error(code, message)
+            except OSError:
+                pass
+
         def _proxy(self):
             backend = self._next_backend()
             host, _, port = backend.partition(":")
@@ -299,6 +418,22 @@ def make_proxy_handler(backends):
                     self.send_error(400, "invalid Content-Length")
                     return
 
+            # When the client frames its body with `Transfer-Encoding: chunked`
+            # (e.g. `nix copy` streaming a NAR whose compressed size is unknown),
+            # the body must still be forwarded. `Transfer-Encoding` is hop-by-hop,
+            # so we re-encode it ourselves. Per RFC 7230 §3.3.3, if both
+            # Transfer-Encoding and Content-Length are present, chunked wins and
+            # Content-Length is ignored (also closes a request-smuggling vector).
+            te = self.headers.get("Transfer-Encoding", "")
+            is_chunked = "chunked" in te.lower()
+            if is_chunked:
+                content_length = None
+
+            # Track how much fixed-length body is still unread so a failure
+            # mid-forward drains only the remainder (not the whole declared
+            # length, which would over-drain/block).
+            cl_remaining = content_length
+
             conn = None
             try:
                 try:
@@ -312,24 +447,46 @@ def make_proxy_handler(backends):
                     for key, value in _forwardable_request_headers(
                         self.headers, backend
                     ):
+                        # When forwarding chunked, never also send the client's
+                        # Content-Length (RFC 7230 §3.3.3) — it would confuse the
+                        # backend's body framing.
+                        if is_chunked and key.lower() == "content-length":
+                            continue
                         conn.putheader(key, value)
+                    if is_chunked:
+                        # Re-advertise chunked framing to the backend (it was
+                        # dropped as hop-by-hop above).
+                        conn.putheader("Transfer-Encoding", "chunked")
                     conn.endheaders()
 
                     # Stream the request body (if any) without buffering it whole.
                     if content_length is not None:
-                        remaining = content_length
-                        while remaining > 0:
-                            chunk = self.rfile.read(min(PROXY_BUFFER, remaining))
+                        while cl_remaining > 0:
+                            chunk = self.rfile.read(min(PROXY_BUFFER, cl_remaining))
                             if not chunk:
-                                break
+                                # Client closed before sending the full body the
+                                # backend was told to expect; routing this to the
+                                # 502 path avoids hanging in getresponse().
+                                raise ProxyBodyError("truncated request body")
                             conn.send(chunk)
-                            remaining -= len(chunk)
+                            cl_remaining -= len(chunk)
+                    elif is_chunked:
+                        _stream_chunked_body(self.rfile, conn.send)
 
                     resp = conn.getresponse()
+                except ProxyBodyError as exc:
+                    log(f"proxy: body-forward error to {backend}: {exc}", RED)
+                    self._fail(
+                        502, f"proxy body error: {exc}", cl_remaining, is_chunked
+                    )
+                    return
                 except OSError as exc:
                     # No health checks by design; a dead/slow backend yields a
                     # 502 without taking down the proxy thread.
-                    self.send_error(502, f"proxy backend error: {exc}")
+                    log(f"proxy: backend error to {backend}: {exc}", RED)
+                    self._fail(
+                        502, f"proxy backend error: {exc}", cl_remaining, is_chunked
+                    )
                     return
 
                 # Forward the backend response faithfully (status + headers +
