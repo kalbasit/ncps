@@ -1715,6 +1715,23 @@ func repairFsckIssues(
 		}
 	}
 
+	// e2. Reclaim chunks stranded behind stale nar_file_chunks links to dechunked
+	// nar_files (total_chunks = 0). The orphaned-chunk (unlinked) reclamation above
+	// cannot reach them because they still carry a stale link.
+	if chunkStore != nil {
+		staleLinks, staleChunks, err := reclaimStaleChunkLinks(ctx, dbClient, chunkStore)
+		if err != nil {
+			return fmt.Errorf("reclaim stale chunk links: %w", err)
+		}
+
+		if staleLinks > 0 || staleChunks > 0 {
+			logger.Info().
+				Int("links", staleLinks).
+				Int("chunks", staleChunks).
+				Msg("reclaimed chunks stranded behind stale links to dechunked nar_files")
+		}
+	}
+
 	// f. Repair narinfos advertising a non-producible compression (xz) whose backing
 	// NAR is stored otherwise: rewrite to the servable none form so they serve via
 	// transparent decompression (#1392).
@@ -1730,6 +1747,73 @@ func repairFsckIssues(
 	}
 
 	return nil
+}
+
+// reclaimStaleChunkLinks deletes nar_file_chunks links whose parent nar_file is
+// dechunked (total_chunks <= 0 and not actively chunking) — a dechunked NAR must
+// own no chunk links — and then reclaims the chunks left with no remaining links
+// (their chunk-store blobs and DB rows). A chunk still referenced by a chunked
+// (total_chunks > 0) nar_file keeps a live link and is retained. The orphaned-
+// chunk reclamation elsewhere only deletes chunks that are already unlinked, so it
+// cannot reach chunks held by these stale links. Returns (linksDeleted,
+// chunksReclaimed). Idempotent: once the stale links are gone, a re-run finds none.
+func reclaimStaleChunkLinks(
+	ctx context.Context,
+	dbClient *database.Client,
+	chunkStore chunk.Store,
+) (int, int, error) {
+	// A mid-chunking nar_file has chunking_started_at set with total_chunks still 0;
+	// its links are being written, not stale, so exclude it via ChunkingStartedAtIsNil.
+	staleLinks, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.HasNarFileWith(
+			entnarfile.TotalChunksLTE(0),
+			entnarfile.ChunkingStartedAtIsNil(),
+		)).
+		All(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("query stale chunk links: %w", err)
+	}
+
+	linksDeleted := 0
+
+	for _, link := range staleLinks {
+		if err := dbClient.Ent().NarFileChunk.DeleteOneID(link.ID).Exec(ctx); err != nil {
+			return linksDeleted, 0, fmt.Errorf("delete stale chunk link %d: %w", link.ID, err)
+		}
+
+		linksDeleted++
+	}
+
+	if linksDeleted == 0 {
+		return 0, 0, nil
+	}
+
+	// Reclaim chunks left with no remaining links after stale-link removal. A chunk
+	// shared with a still-chunked nar_file keeps a live link and is skipped here.
+	orphaned, err := dbClient.Ent().Chunk.Query().
+		Where(entchunk.Not(entchunk.HasNarFileLinks())).
+		All(ctx)
+	if err != nil {
+		return linksDeleted, 0, fmt.Errorf("query orphaned chunks after stale-link cleanup: %w", err)
+	}
+
+	chunksReclaimed := 0
+
+	for _, ch := range orphaned {
+		if chunkStore != nil {
+			if err := chunkStore.DeleteChunk(ctx, ch.Hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
+				return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk blob %s: %w", ch.Hash, err)
+			}
+		}
+
+		if err := dbClient.Ent().Chunk.DeleteOneID(ch.ID).Exec(ctx); err != nil {
+			return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk row %d: %w", ch.ID, err)
+		}
+
+		chunksReclaimed++
+	}
+
+	return linksDeleted, chunksReclaimed, nil
 }
 
 // repairNarInfoCompressionDesync rewrites narinfos that advertise a
