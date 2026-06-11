@@ -90,15 +90,14 @@ def _classify_xz(base_url: str, xz_path: str) -> str:
     'mislabeled' is the #1398 bug: a 200 whose body is not decodable as xz
     (the client-visible "input compression not recognized").
     """
+    # urlopen raises HTTPError for any non-2xx/3xx status (404, 5xx), so a return
+    # from the with-block means a 2xx (200 for a NAR GET) and `body` is set.
     try:
         with urllib.request.urlopen(base_url + xz_path, timeout=120) as r:
-            status = r.status
             body = r.read()
-    except urllib.error.HTTPError as e:
-        return "notfound" if e.code == 404 else "mislabeled" if e.code == 200 else "notfound"
-    except Exception:  # noqa: BLE001 — connection resets etc. are not the invariant under test
+    except urllib.error.HTTPError:
         return "notfound"
-    if status == 404 or status != 200:
+    except Exception:  # noqa: BLE001 — connection resets etc. are not the invariant under test
         return "notfound"
     if not body:
         return "mislabeled"
@@ -126,7 +125,12 @@ def _race_xz_during_window(deployment, nar_hash: str, xz_path: str) -> dict:
 
     def worker():
         while time.time() < deadline:
-            if _inflight_state(db, nar_hash) != "done":
+            # Serialize the DB gate under the shared lock: db.query opens its own
+            # sqlite connection per call, but the lock avoids 8 threads churning
+            # connections in lockstep and keeps DB access single-threaded.
+            with lock:
+                in_flight = _inflight_state(db, nar_hash) != "done"
+            if in_flight:
                 overlapped["seen"] = True
             verdict = _classify_xz(base, xz_path)
             with lock:
@@ -198,7 +202,7 @@ def run(deployment, scenario) -> None:
 
         # Missed the window (NAR chunked before any .nar.xz landed): retry clean.
         if attempt < ATTEMPTS:
-            log(f"  in-flight window missed; clean restart + retry", Y)
+            log("  in-flight window missed; clean restart + retry", Y)
             deployment.clean_restart(cdc=True)
 
     raise AssertionFailure(

@@ -14,14 +14,16 @@ this right (`nar-serving-recompression`); the in-flight path does not.
 
 - Before the in-flight temp-file serve relabels the request to the holder's
   compression, it consults the **originally requested** compression and applies
-  the same discipline the store/staging paths already use:
+  the same discipline the in-flight staging path already uses:
   - `none` request → serve the decompressed temp bytes as today (unchanged).
-  - `zstd` request → recompress the reassembled bytes to zstd on the fly
-    (mirroring `serveZstdFromChunks`), labeled `zstd`.
-  - `xz`/any non-producible compression → return `storage.ErrNotFound` (HTTP
-    404) so the client falls back to an upstream that still has the original
-    file — never a mislabeled body. This folds the fatal mislabel into the
-    already-graceful 404-fallback the post-window path produces.
+  - any non-matching compression the uncompressed in-flight holder cannot
+    satisfy (`zstd` *or* `xz`) → return `storage.ErrNotFound` (HTTP 404) so the
+    client falls back to an upstream that still has the original file — never a
+    mislabeled body. This folds the fatal mislabel into the already-graceful
+    404-fallback the post-window path produces.
+  - This is only the brief in-flight window: once the NAR is fully chunked, a
+    `zstd` request is served by recompression (`serveZstdFromChunks` /
+    `nar-serving-recompression`) and a `none` request by reassembly — unchanged.
 - Reuse the existing `compressedRequestNeedsUpstreamFallback` predicate so the
   in-flight path and the staging path share one fallback rule.
 
