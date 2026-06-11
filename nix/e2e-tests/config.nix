@@ -406,6 +406,39 @@ rec {
       redis.enabled = true;
       features = [ ];
     }
+
+    # 16. Single instance, eager CDC, exercising the #1398 compressed-request
+    #     mislabel. `phase`/`modes` are harness-only keys (ignored by
+    #     generateValues). Single replica + local locker (in-flight staging OFF)
+    #     is the reporter's topology. Local-only: the in-flight chunking window is
+    #     a timing event (same rationale as staging-contention), so a `.nar.xz`
+    #     request must land mid-pull to catch the mislabel; the cross-pod port
+    #     forward jitter on Kind de-synchronizes that race. See GitHub issue #1398.
+    {
+      name = "input-compression";
+      description = "Eager-CDC compressed (.nar.xz) request mislabel during the in-flight chunking window (#1398)";
+      replicas = 1;
+      mode = null;
+      migration.mode = "initContainer";
+      phase = "input-compression";
+      modes = [ "local" ];
+      storage = {
+        type = "local";
+        local = {
+          path = "/storage";
+          persistence = {
+            enabled = true;
+            size = "5Gi";
+          };
+        };
+      };
+      database = {
+        type = "sqlite";
+        sqlite.path = "/storage/db/ncps.db";
+      };
+      redis.enabled = false;
+      features = [ ];
+    }
   ];
 
   # Composable feature definitions

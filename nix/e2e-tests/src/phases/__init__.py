@@ -21,4 +21,8 @@ def get_phase(name: str):
         from phases.staging_contention import run
 
         return run
+    if name == "input-compression":
+        from phases.input_compression import run
+
+        return run
     raise ValueError(f"unknown phase: {name!r}")
