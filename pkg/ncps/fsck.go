@@ -1809,12 +1809,20 @@ func repairOneNarInfoCompressionDesync(ctx context.Context, dbClient *database.C
 		return false, nil
 	}
 
-	// Confirm a backing NAR exists before rewriting, so we never advertise none for
-	// bytes that are absent. A linked (non-xz) nar_file is enough; the serve path
-	// produces none from any stored representation. Rows with no backing are left to
-	// the orphan-narinfo repair path above.
+	// Confirm a backing NAR exists AT THE ADVERTISED ADDRESS before rewriting, so we
+	// never advertise none for bytes that are absent. The backing must match the
+	// advertised hash+query, not merely be any link on the narinfo: a stale or
+	// mismatched link to a different nar_file would otherwise pass and rewrite the URL
+	// to none for a hash that has no servable bytes. The advertised xz row was already
+	// excluded above, so a match here is a non-xz row the serve path can produce none
+	// from. Rows with no matching backing are left to the relink/orphan-narinfo repair
+	// paths above.
 	hasBacking, err := dbClient.Ent().NarFile.Query().
-		Where(entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID))).
+		Where(
+			entnarfile.HashEQ(advertised.Hash),
+			entnarfile.QueryEQ(advertised.Query.Encode()),
+			entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID)),
+		).
 		Exist(ctx)
 	if err != nil {
 		return false, fmt.Errorf("check backing nar_file for narinfo(%d): %w", ni.ID, err)
