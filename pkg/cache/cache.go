@@ -3676,6 +3676,16 @@ func (c *Cache) serveNarFromStorageViaPipe(
 // zstd-advertised request is served instead of 404'd (the inverse of the
 // uncompressed-serve fallback; issue #1392). The compressed length is not known
 // up front, so it returns size -1; the reader yields the zstd-compressed NAR.
+//
+// The freshly-recompressed bytes will not byte-match the origin's zstd, so their
+// FileHash/FileSize differ from what the client's narinfo advertises. This is
+// safe for Nix by protocol design: the narinfo signature fingerprint covers only
+// StorePath/NarHash/NarSize/References (not FileHash/FileSize/Compression/URL),
+// and BinaryCacheStore::narFromPath decompresses by the narinfo's Compression
+// without ever verifying FileHash — FileHash is producer-only and FileSize only
+// drives the download progress counter. Integrity is the signed NarHash, checked
+// after decompression; our stream decompresses to the identical NAR, so it passes.
+// This is the same mechanism that lets any pull-through cache transcode.
 func (c *Cache) serveZstdFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
 	noneURL := *narURL
 	noneURL.Compression = nar.CompressionTypeNone
