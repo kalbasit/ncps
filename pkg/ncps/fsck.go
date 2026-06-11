@@ -1744,11 +1744,25 @@ func repairFsckIssues(
 func repairNarInfoCompressionDesync(ctx context.Context, dbClient *database.Client) (int, error) {
 	// Only xz lacks a serve-time compressor; none and zstd are producible from any
 	// stored representation, so a narinfo advertising them is already servable.
+	//
+	// Narrow the candidate set in SQL to just the desynced rows — advertised xz,
+	// backed by at least one nar_file, but NOT backed by an xz nar_file — so a cache
+	// with many healthy xz entries loads only the few desynced narinfos (~tens) and
+	// does no per-row work for the healthy ones. repairOneNarInfoCompressionDesync
+	// re-verifies precisely (by the advertised hash) before rewriting.
 	nis, err := dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.CompressionEQ(nar.CompressionTypeXz.String())).
+		Where(
+			entnarinfo.CompressionEQ(nar.CompressionTypeXz.String()),
+			entnarinfo.HasNarInfoNarFiles(),
+			entnarinfo.Not(entnarinfo.HasNarInfoNarFilesWith(
+				entnarinfonarfile.HasNarFileWith(
+					entnarfile.CompressionEQ(nar.CompressionTypeXz.String()),
+				),
+			)),
+		).
 		All(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("query xz-advertised narinfos: %w", err)
+		return 0, fmt.Errorf("query desynced xz-advertised narinfos: %w", err)
 	}
 
 	repaired := 0
