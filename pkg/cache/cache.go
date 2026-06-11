@@ -3690,17 +3690,24 @@ func (c *Cache) serveZstdFromChunks(ctx context.Context, narURL *nar.URL) (int64
 	analytics.SafeGo(ctx, func() {
 		zw := zstd.NewPooledWriter(pipeWriter)
 
-		_, copyErr := io.Copy(zw, rawReader)
+		var copyErr error
 
-		closeErr := zw.Close()
+		// Run all teardown in a single defer so an unexpected early exit or panic in
+		// io.Copy still returns the pooled encoder, closes the chunk reader, and —
+		// critically — closes the pipe, so the consumer never hangs.
+		// PooledWriter.Close is idempotent.
+		defer func() {
+			closeErr := zw.Close()
+			_ = rawReader.Close()
 
-		_ = rawReader.Close()
+			if copyErr != nil {
+				pipeWriter.CloseWithError(copyErr)
+			} else {
+				pipeWriter.CloseWithError(closeErr)
+			}
+		}()
 
-		if copyErr != nil {
-			pipeWriter.CloseWithError(copyErr)
-		} else {
-			pipeWriter.CloseWithError(closeErr)
-		}
+		_, copyErr = io.Copy(zw, rawReader)
 	})
 
 	return -1, pipeReader, nil
