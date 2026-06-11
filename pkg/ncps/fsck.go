@@ -1715,6 +1715,23 @@ func repairFsckIssues(
 		}
 	}
 
+	// e2. Reclaim chunks stranded behind stale nar_file_chunks links to dechunked
+	// nar_files (total_chunks = 0). The orphaned-chunk (unlinked) reclamation above
+	// cannot reach them because they still carry a stale link.
+	if chunkStore != nil {
+		staleLinks, staleChunks, err := reclaimStaleChunkLinks(ctx, dbClient, chunkStore)
+		if err != nil {
+			return fmt.Errorf("reclaim stale chunk links: %w", err)
+		}
+
+		if staleLinks > 0 || staleChunks > 0 {
+			logger.Info().
+				Int("links", staleLinks).
+				Int("chunks", staleChunks).
+				Msg("reclaimed chunks stranded behind stale links to dechunked nar_files")
+		}
+	}
+
 	// f. Repair narinfos advertising a non-producible compression (xz) whose backing
 	// NAR is stored otherwise: rewrite to the servable none form so they serve via
 	// transparent decompression (#1392).
@@ -1730,6 +1747,89 @@ func repairFsckIssues(
 	}
 
 	return nil
+}
+
+// reclaimStaleChunkLinks deletes nar_file_chunks links whose parent nar_file is
+// dechunked (total_chunks <= 0 and not actively chunking) — a dechunked NAR must
+// own no chunk links — and then reclaims the chunks left with no remaining links
+// (their chunk-store blobs and DB rows). A chunk still referenced by a chunked
+// (total_chunks > 0) nar_file keeps a live link and is retained. The orphaned-
+// chunk reclamation elsewhere only deletes chunks that are already unlinked, so it
+// cannot reach chunks held by these stale links. Returns (linksDeleted,
+// chunksReclaimed). Idempotent: once the stale links are gone, a re-run finds none.
+func reclaimStaleChunkLinks(
+	ctx context.Context,
+	dbClient *database.Client,
+	chunkStore chunk.Store,
+) (int, int, error) {
+	if dbClient == nil {
+		return 0, 0, nil
+	}
+
+	// Delete every stale link in one bulk statement with the predicate evaluated at
+	// delete time. This avoids materializing the (potentially huge) link set, avoids
+	// N per-row deletes, and closes the TOCTOU window: a parent that transitions to
+	// active chunking between scan and delete no longer matches the predicate and is
+	// not affected. A mid-chunking nar_file has chunking_started_at set with
+	// total_chunks still 0; its links are being written, not stale, so it is excluded
+	// via ChunkingStartedAtIsNil.
+	linksDeleted, err := dbClient.Ent().NarFileChunk.Delete().
+		Where(entnarfilechunk.HasNarFileWith(
+			entnarfile.TotalChunksLTE(0),
+			entnarfile.ChunkingStartedAtIsNil(),
+		)).
+		Exec(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("delete stale chunk links: %w", err)
+	}
+
+	if linksDeleted == 0 {
+		return 0, 0, nil
+	}
+
+	// Reclaim chunks left with no remaining links after stale-link removal, paged to
+	// bound memory on large residue (millions of chunks). A chunk shared with a
+	// still-chunked nar_file keeps a live link and is skipped. Each page is deleted
+	// by a bounded IDIn bulk delete; the next page query re-evaluates the predicate,
+	// so the loop converges as rows are removed.
+	chunksReclaimed := 0
+
+	for {
+		orphaned, err := dbClient.Ent().Chunk.Query().
+			Where(entchunk.Not(entchunk.HasNarFileLinks())).
+			Limit(fsckEagerLoadBatchSize).
+			All(ctx)
+		if err != nil {
+			return linksDeleted, chunksReclaimed, fmt.Errorf("query orphaned chunks after stale-link cleanup: %w", err)
+		}
+
+		if len(orphaned) == 0 {
+			break
+		}
+
+		ids := make([]int, 0, len(orphaned))
+
+		for _, ch := range orphaned {
+			if chunkStore != nil {
+				if err := chunkStore.DeleteChunk(ctx, ch.Hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
+					return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk blob %s: %w", ch.Hash, err)
+				}
+			}
+
+			ids = append(ids, ch.ID)
+		}
+
+		deleted, err := dbClient.Ent().Chunk.Delete().
+			Where(entchunk.IDIn(ids...)).
+			Exec(ctx)
+		if err != nil {
+			return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk rows: %w", err)
+		}
+
+		chunksReclaimed += deleted
+	}
+
+	return linksDeleted, chunksReclaimed, nil
 }
 
 // repairNarInfoCompressionDesync rewrites narinfos that advertise a
