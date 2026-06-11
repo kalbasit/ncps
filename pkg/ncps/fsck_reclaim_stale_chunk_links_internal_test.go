@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,6 +47,16 @@ func TestReclaimStaleChunkLinks(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
+	// Mid-chunking nar_file (total_chunks=0 but chunking_started_at set): its links
+	// are being written, NOT stale, and must be preserved by the not-actively-chunking
+	// guard.
+	midChunkingNF, err := dbClient.Ent().NarFile.Create().
+		SetHash("midchunkingnarfilehashcccccccccccccccccccccccccccccc").
+		SetCompression(nar.CompressionTypeNone.String()).SetQuery("").
+		SetFileSize(15).SetTotalChunks(0).SetChunkingStartedAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
 	mkChunk := func() string {
 		h := testhelper.MustRandBase32NarHash()
 		_, _, perr := chunkStore.PutChunk(ctx, h, []byte("chunk-"+h))
@@ -60,6 +71,7 @@ func TestReclaimStaleChunkLinks(t *testing.T) {
 	staleHash := mkChunk()   // linked only to the dechunked nar_file → reclaim
 	sharedHash := mkChunk()  // linked to both → retain (chunked keeps a live link)
 	healthyHash := mkChunk() // linked only to the chunked nar_file → retain
+	midHash := mkChunk()     // linked only to the mid-chunking nar_file → retain
 
 	link := func(nfID int, chunkHash string, idx int) {
 		ch, qerr := dbClient.Ent().Chunk.Query().Where(entchunk.HashEQ(chunkHash)).Only(ctx)
@@ -74,6 +86,7 @@ func TestReclaimStaleChunkLinks(t *testing.T) {
 	link(dechunkedNF.ID, sharedHash, 1) // stale
 	link(chunkedNF.ID, sharedHash, 0)   // live
 	link(chunkedNF.ID, healthyHash, 1)  // live
+	link(midChunkingNF.ID, midHash, 0)  // mid-chunking, not stale
 
 	linksDeleted, chunksReclaimed, err := reclaimStaleChunkLinks(ctx, dbClient, chunkStore)
 	require.NoError(t, err)
@@ -89,12 +102,19 @@ func TestReclaimStaleChunkLinks(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, staleBlob, "stale-only chunk blob must be reclaimed")
 
-	// sharedHash + healthyHash: retained (still linked to the chunked nar_file).
-	for _, h := range []string{sharedHash, healthyHash} {
+	// sharedHash + healthyHash retained (still linked to the chunked nar_file);
+	// midHash retained because its parent is mid-chunking (not stale).
+	for _, h := range []string{sharedHash, healthyHash, midHash} {
 		exists, err := dbClient.Ent().Chunk.Query().Where(entchunk.HashEQ(h)).Exist(ctx)
 		require.NoError(t, err)
-		assert.True(t, exists, "chunk still referenced by a chunked NAR must be retained: %s", h)
+		assert.True(t, exists, "chunk that must be retained was reclaimed: %s", h)
 	}
+
+	// The mid-chunking nar_file's link must be preserved (the not-actively-chunking guard).
+	midLinks, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileIDEQ(midChunkingNF.ID)).Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, midLinks, "a mid-chunking nar_file's links must not be treated as stale")
 
 	// The chunked nar_file keeps both its links.
 	chunkedLinks, err := dbClient.Ent().NarFileChunk.Query().

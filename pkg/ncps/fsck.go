@@ -1762,55 +1762,71 @@ func reclaimStaleChunkLinks(
 	dbClient *database.Client,
 	chunkStore chunk.Store,
 ) (int, int, error) {
-	// A mid-chunking nar_file has chunking_started_at set with total_chunks still 0;
-	// its links are being written, not stale, so exclude it via ChunkingStartedAtIsNil.
-	staleLinks, err := dbClient.Ent().NarFileChunk.Query().
+	if dbClient == nil {
+		return 0, 0, nil
+	}
+
+	// Delete every stale link in one bulk statement with the predicate evaluated at
+	// delete time. This avoids materializing the (potentially huge) link set, avoids
+	// N per-row deletes, and closes the TOCTOU window: a parent that transitions to
+	// active chunking between scan and delete no longer matches the predicate and is
+	// not affected. A mid-chunking nar_file has chunking_started_at set with
+	// total_chunks still 0; its links are being written, not stale, so it is excluded
+	// via ChunkingStartedAtIsNil.
+	linksDeleted, err := dbClient.Ent().NarFileChunk.Delete().
 		Where(entnarfilechunk.HasNarFileWith(
 			entnarfile.TotalChunksLTE(0),
 			entnarfile.ChunkingStartedAtIsNil(),
 		)).
-		All(ctx)
+		Exec(ctx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("query stale chunk links: %w", err)
-	}
-
-	linksDeleted := 0
-
-	for _, link := range staleLinks {
-		if err := dbClient.Ent().NarFileChunk.DeleteOneID(link.ID).Exec(ctx); err != nil {
-			return linksDeleted, 0, fmt.Errorf("delete stale chunk link %d: %w", link.ID, err)
-		}
-
-		linksDeleted++
+		return 0, 0, fmt.Errorf("delete stale chunk links: %w", err)
 	}
 
 	if linksDeleted == 0 {
 		return 0, 0, nil
 	}
 
-	// Reclaim chunks left with no remaining links after stale-link removal. A chunk
-	// shared with a still-chunked nar_file keeps a live link and is skipped here.
-	orphaned, err := dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
-		All(ctx)
-	if err != nil {
-		return linksDeleted, 0, fmt.Errorf("query orphaned chunks after stale-link cleanup: %w", err)
-	}
-
+	// Reclaim chunks left with no remaining links after stale-link removal, paged to
+	// bound memory on large residue (millions of chunks). A chunk shared with a
+	// still-chunked nar_file keeps a live link and is skipped. Each page is deleted
+	// by a bounded IDIn bulk delete; the next page query re-evaluates the predicate,
+	// so the loop converges as rows are removed.
 	chunksReclaimed := 0
 
-	for _, ch := range orphaned {
-		if chunkStore != nil {
-			if err := chunkStore.DeleteChunk(ctx, ch.Hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
-				return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk blob %s: %w", ch.Hash, err)
+	for {
+		orphaned, err := dbClient.Ent().Chunk.Query().
+			Where(entchunk.Not(entchunk.HasNarFileLinks())).
+			Limit(fsckEagerLoadBatchSize).
+			All(ctx)
+		if err != nil {
+			return linksDeleted, chunksReclaimed, fmt.Errorf("query orphaned chunks after stale-link cleanup: %w", err)
+		}
+
+		if len(orphaned) == 0 {
+			break
+		}
+
+		ids := make([]int, 0, len(orphaned))
+
+		for _, ch := range orphaned {
+			if chunkStore != nil {
+				if err := chunkStore.DeleteChunk(ctx, ch.Hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
+					return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk blob %s: %w", ch.Hash, err)
+				}
 			}
+
+			ids = append(ids, ch.ID)
 		}
 
-		if err := dbClient.Ent().Chunk.DeleteOneID(ch.ID).Exec(ctx); err != nil {
-			return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk row %d: %w", ch.ID, err)
+		deleted, err := dbClient.Ent().Chunk.Delete().
+			Where(entchunk.IDIn(ids...)).
+			Exec(ctx)
+		if err != nil {
+			return linksDeleted, chunksReclaimed, fmt.Errorf("delete orphaned chunk rows: %w", err)
 		}
 
-		chunksReclaimed++
+		chunksReclaimed += deleted
 	}
 
 	return linksDeleted, chunksReclaimed, nil
