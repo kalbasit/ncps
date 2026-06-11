@@ -1715,7 +1715,140 @@ func repairFsckIssues(
 		}
 	}
 
+	// f. Repair narinfos advertising a non-producible compression (xz) whose backing
+	// NAR is stored otherwise: rewrite to the servable none form so they serve via
+	// transparent decompression (#1392).
+	repairedCompression, err := repairNarInfoCompressionDesync(ctx, dbClient)
+	if err != nil {
+		return fmt.Errorf("repair narinfo compression desync: %w", err)
+	}
+
+	if repairedCompression > 0 {
+		logger.Info().
+			Int("count", repairedCompression).
+			Msg("repaired narinfos advertising a non-producible compression")
+	}
+
 	return nil
+}
+
+// repairNarInfoCompressionDesync rewrites narinfos that advertise a
+// non-producible compression (one ncps has no compressor for, i.e. xz) whose
+// backing NAR is stored under a different compression, to the servable
+// uncompressed form (URL nar/<nar_hash>.nar, Compression: none, FileHash/
+// FileSize cleared). The uncompressed NAR is then served by transparent
+// decompression of the stored bytes (#1392). Healthy narinfos (advertised
+// compression matches a stored representation, or is directly producible: none /
+// zstd) are left untouched, and the repair is idempotent. Returns the count
+// rewritten.
+func repairNarInfoCompressionDesync(ctx context.Context, dbClient *database.Client) (int, error) {
+	// Only xz lacks a serve-time compressor; none and zstd are producible from any
+	// stored representation, so a narinfo advertising them is already servable.
+	//
+	// Narrow the candidate set in SQL to just the desynced rows — advertised xz,
+	// backed by at least one nar_file, but NOT backed by an xz nar_file — so a cache
+	// with many healthy xz entries loads only the few desynced narinfos (~tens) and
+	// does no per-row work for the healthy ones. repairOneNarInfoCompressionDesync
+	// re-verifies precisely (by the advertised hash) before rewriting.
+	nis, err := dbClient.Ent().NarInfo.Query().
+		Where(
+			entnarinfo.CompressionEQ(nar.CompressionTypeXz.String()),
+			entnarinfo.HasNarInfoNarFiles(),
+			entnarinfo.Not(entnarinfo.HasNarInfoNarFilesWith(
+				entnarinfonarfile.HasNarFileWith(
+					entnarfile.CompressionEQ(nar.CompressionTypeXz.String()),
+				),
+			)),
+		).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query desynced xz-advertised narinfos: %w", err)
+	}
+
+	repaired := 0
+
+	for _, ni := range nis {
+		ok, err := repairOneNarInfoCompressionDesync(ctx, dbClient, ni)
+		if err != nil {
+			return repaired, err
+		}
+
+		if ok {
+			repaired++
+		}
+	}
+
+	return repaired, nil
+}
+
+func repairOneNarInfoCompressionDesync(ctx context.Context, dbClient *database.Client, ni *ent.NarInfo) (bool, error) {
+	// Without an advertised URL we cannot reconcile the compression.
+	if ni.URL == nil || *ni.URL == "" {
+		return false, nil
+	}
+
+	advertised, err := nar.ParseURL(*ni.URL)
+	if err != nil {
+		return false, nil //nolint:nilerr // unparseable URL: nothing to reconcile here
+	}
+
+	// If the NAR is actually stored in the advertised (xz) compression, the narinfo
+	// is correct — leave it.
+	xzExists, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(advertised.Hash),
+			entnarfile.CompressionEQ(nar.CompressionTypeXz.String()),
+			entnarfile.QueryEQ(advertised.Query.Encode()),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check xz nar_file for narinfo(%d): %w", ni.ID, err)
+	}
+
+	if xzExists {
+		return false, nil
+	}
+
+	// Confirm a backing NAR exists AT THE ADVERTISED ADDRESS before rewriting, so we
+	// never advertise none for bytes that are absent. The backing must match the
+	// advertised hash+query, not merely be any link on the narinfo: a stale or
+	// mismatched link to a different nar_file would otherwise pass and rewrite the URL
+	// to none for a hash that has no servable bytes. The advertised xz row was already
+	// excluded above, so a match here is a non-xz row the serve path can produce none
+	// from. Rows with no matching backing are left to the relink/orphan-narinfo repair
+	// paths above.
+	hasBacking, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(advertised.Hash),
+			entnarfile.QueryEQ(advertised.Query.Encode()),
+			entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check backing nar_file for narinfo(%d): %w", ni.ID, err)
+	}
+
+	if !hasBacking {
+		return false, nil
+	}
+
+	// Reuse the advertised URL's hash (the same hash the backing nar_file is keyed
+	// by); only the compression/extension changes. This matches the CDC narinfo
+	// normalization (maybeCDCNormalizeNarInfoURL) and lets the resolve-by-hash serve
+	// path (#1393) decompress the stored bytes for the none request.
+	noneURL := nar.URL{Hash: advertised.Hash, Compression: nar.CompressionTypeNone, Query: advertised.Query}
+
+	if _, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.IDEQ(ni.ID)).
+		SetURL(noneURL.String()).
+		SetCompression(nar.CompressionTypeNone.String()).
+		ClearFileHash().
+		ClearFileSize().
+		Save(ctx); err != nil {
+		return false, fmt.Errorf("rewrite narinfo(%d) to none: %w", ni.ID, err)
+	}
+
+	return true, nil
 }
 
 // repairBrokenCDCNarFiles deletes broken CDC nar_files, their orphaned narinfos, and orphaned chunks.
