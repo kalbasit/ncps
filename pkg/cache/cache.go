@@ -1481,6 +1481,26 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			return err
 		}
 
+		// The download is healthy, but the in-flight temp file holds a single
+		// representation (under eager CDC, the decompressed/uncompressed NAR;
+		// ds.tempFileCompression). A client that requested a *different* compression
+		// we cannot produce from it (e.g. .nar.xz, or .nar.zst while the temp is
+		// uncompressed) must NOT be served the temp bytes relabeled as that
+		// compression — the client decodes by its narinfo's Compression and fails
+		// with "input compression not recognized" (#1398). Fall back to not-found so
+		// it re-fetches the real compressed file from an upstream, mirroring the
+		// in-flight staging serve path. This is only the brief in-flight window:
+		// once chunked, a zstd request is served by recompression and a none request
+		// by reassembly. Checked only after ds.getError so a genuine upstream miss
+		// still surfaces upstream.ErrNotFound rather than this fallback's not-found.
+		if compressedRequestNeedsUpstreamFallback(requestedCompression, ds.tempFileCompression) {
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+			ds.wg.Done()
+
+			return storage.ErrNotFound
+		}
+
 		// Add upstream hostname to metrics on success
 		if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
 			metricAttrs = append(metricAttrs,
