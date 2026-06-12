@@ -193,7 +193,7 @@ func TestPrintFsckRunPlanVerifyContentAndDryRun(t *testing.T) {
 func TestLogProgressUniformFields(t *testing.T) {
 	t.Parallel()
 
-	for _, phase := range []string{"phase 1: scanning", "phase 2: re-verifying", "phase 3: repairing"} {
+	for _, phase := range []string{"1c", "2", "3"} {
 		t.Run(phase, func(t *testing.T) {
 			t.Parallel()
 
@@ -213,4 +213,29 @@ func TestLogProgressUniformFields(t *testing.T) {
 			assert.Contains(t, fields, "rate")
 		})
 	}
+}
+
+// TestLogProgressOmitsUnknownTotal proves that when the work size is not known up
+// front (total <= 0, e.g. a chunk-storage walk), the helper omits both total and
+// percent rather than emitting a frozen denominator that `checked` overruns. This
+// is the fix for the confusing "checked=128299 total=86479" phase-1h output.
+func TestLogProgressOmitsUnknownTotal(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := zerolog.New(&buf)
+	logProgress(logger, "1h", time.Now().Add(-time.Second), 128299, 0).
+		Str("check", "orphaned chunk files in storage").
+		Msg("progress update")
+
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &fields))
+
+	assert.Equal(t, "1h", fields["phase"])
+	assert.Equal(t, "orphaned chunk files in storage", fields["check"])
+	assert.EqualValues(t, 128299, fields["checked"])
+	assert.NotContains(t, fields, "total")
+	assert.NotContains(t, fields, "percent")
+	assert.Contains(t, fields, "rate")
 }
