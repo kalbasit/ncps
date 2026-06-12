@@ -491,16 +491,20 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				chunkStore = cs
 			}
 
-			// 6. Phase 1: Collect suspects
-			logger.Info().Msg("phase 1: collecting suspects")
+			// 6. Print the run plan so the operator can see which phases and
+			// sub-checks will run for this invocation before any scanning starts.
+			printFsckRunPlan(os.Stdout, cdcMode, verifyContent, fsckRunModeOf(dryRun, repair))
+
+			// Phase 1: Collect suspects.
+			logger.Info().Str("phase", "1").Msg("phase 1: scanning database and storage for inconsistencies")
 
 			suspects, err := collectFsckSuspects(ctx, dbClient, narStore, chunkStore, cdcMode, verifiedSince, verifyContent)
 			if err != nil {
 				return fmt.Errorf("error collecting suspects: %w", err)
 			}
 
-			// 7. Phase 2: Re-verify (double-check to handle in-flight operations)
-			logger.Info().Msg("phase 2: re-verifying suspects")
+			// 7. Phase 2: Re-verify (double-check to handle in-flight operations).
+			logger.Info().Str("phase", "2").Msg("phase 2: re-verifying suspects to rule out in-flight changes")
 
 			results, err := reVerifyFsckSuspects(ctx, dbClient, narStore, chunkStore, suspects)
 			if err != nil {
@@ -600,8 +604,8 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				}
 			}
 
-			// 10. Phase 3: Repair
-			logger.Info().Msg("phase 3: repairing issues")
+			// 10. Phase 3: Repair.
+			logger.Info().Str("phase", "3").Msg("phase 3: repairing confirmed issues")
 
 			// Reconcile chunked residue on the interactive-approval path. Skipped when
 			// --repair is set, because the janitor above already ran; this guard prevents a
@@ -641,20 +645,29 @@ func collectFsckSuspects(
 
 	startTime := time.Now()
 
-	// Start background progress ticker
+	// Start background progress ticker. The periodic update carries only the
+	// uniform progress fields (phase, checked, total, percent, rate); the
+	// suspect/skipped tallies are reported in the phase-1 done line below.
 	stopTicker := startProgressTicker(func() {
-		c := checked.Load()
-		t := total.Load()
-		s := suspects.Load()
-		sk := skipped.Load()
-		logProgress(*logger, startTime, c, t).
-			Int64("suspects", s).
-			Int64("skipped", sk).
-			Msg("phase 1: progress update")
+		logProgress(*logger, "phase 1: scanning", startTime, checked.Load(), total.Load()).
+			Msg("progress update")
 	})
 	defer stopTicker()
 
+	// logPhase1Done emits the uniform phase-1 completion line on every success
+	// path, folding in the aggregate skipped count and the confirmed-suspect total.
+	logPhase1Done := func() {
+		logger.Info().
+			Str("phase", "1").
+			Int64("checked", checked.Load()).
+			Int64("skipped", skipped.Load()).
+			Int("suspects", results.totalIssues()).
+			Msg("phase 1: scan complete")
+	}
+
 	// a. Narinfos without nar_files
+	fsckCheckStart(logger, "1a")
+
 	narinfosWithoutNarFiles, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
 		All(ctx)
@@ -663,9 +676,11 @@ func collectFsckSuspects(
 	}
 
 	results.narinfosWithoutNarFiles = narinfosWithoutNarFiles
-	logger.Info().Int("count", len(narinfosWithoutNarFiles)).Msg("phase 1a: narinfos_without_nar_files found")
+	fsckCheckDone(logger, "1a", len(narinfosWithoutNarFiles))
 
 	// b. Orphaned nar_files in DB
+	fsckCheckStart(logger, "1b")
+
 	orphanedNarFiles, err := dbClient.Ent().NarFile.Query().
 		Where(entnarfile.Not(entnarfile.HasNarInfoNarFiles())).
 		All(ctx)
@@ -674,9 +689,11 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedNarFilesInDB = orphanedNarFiles
-	logger.Info().Int("count", len(orphanedNarFiles)).Msg("phase 1b: orphaned nar_files in DB found")
+	fsckCheckDone(logger, "1b", len(orphanedNarFiles))
 
 	// c. Nar_files missing from storage
+	fsckCheckStart(logger, "1c")
+
 	allNarFiles, err := dbClient.Ent().NarFile.Query().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("GetAllNarFiles: %w", err)
@@ -697,7 +714,7 @@ func collectFsckSuspects(
 	presentNars := make(map[string]struct{})
 
 	// Walk storage to build index of present NARs
-	logger.Info().Msg("phase 1c: walking NAR storage (building index)")
+	logger.Info().Str("phase", "1c").Msg("phase 1c: indexing NAR files present in storage")
 
 	var storageNarCount atomic.Int64
 
@@ -715,12 +732,10 @@ func collectFsckSuspects(
 
 	storageCount := storageNarCount.Load()
 	total.Add(storageCount)
-	logger.Info().Int64("count", storageCount).Msg("phase 1c: indexed NAR files from storage")
+	logger.Info().Str("phase", "1c").Int64("indexed", storageCount).Msg("phase 1c: indexed NAR files from storage")
 
 	// Check for missing nar_files
 	var nonChunkedCount int64
-
-	logger.Info().Int("total", len(allNarFiles)).Msg("phase 1c: checking nar_files against storage")
 
 	for _, nf := range allNarFiles {
 		// Chunked nar_files live in chunk storage — not as whole NAR files.
@@ -757,10 +772,10 @@ func collectFsckSuspects(
 		}
 	}
 
-	logger.Info().Int("suspects", len(results.narFilesMissingInStorage)).Msg("phase 1c: done checking nar_files")
+	fsckCheckDone(logger, "1c", len(results.narFilesMissingInStorage))
 
 	// d. Orphaned NAR files in storage
-	logger.Info().Int64("total", storageCount).Msg("phase 1d: checking storage NAR files against DB")
+	fsckCheckStart(logger, "1d")
 
 	narWalker, ok := narStore.(NarWalker)
 	if ok {
@@ -790,13 +805,17 @@ func collectFsckSuspects(
 		}
 	}
 
-	logger.Info().Int("suspects", len(results.orphanedNarFilesInStorage)).Msg("phase 1d: done checking storage NAR files")
+	fsckCheckDone(logger, "1d", len(results.orphanedNarFilesInStorage))
 
 	if !cdcMode {
+		logPhase1Done()
+
 		return results, nil
 	}
 
 	// e. Orphaned chunks in DB
+	fsckCheckStart(logger, "1e")
+
 	orphanedChunks, err := dbClient.Ent().Chunk.Query().
 		Where(entchunk.Not(entchunk.HasNarFileLinks())).
 		All(ctx)
@@ -805,7 +824,7 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedChunksInDB = orphanedChunks
-	logger.Info().Int("count", len(orphanedChunks)).Msg("phase 1e: orphaned chunks in DB found")
+	fsckCheckDone(logger, "1e", len(orphanedChunks))
 
 	eligibleChunkedNarFiles := make(map[int]*ent.NarFile)
 
@@ -820,7 +839,7 @@ func collectFsckSuspects(
 	}
 
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
-	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
+	fsckCheckStart(logger, "1f")
 
 	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(
 		ctx, dbClient, allNarFiles, chunkStore, &checked, verifiedSince,
@@ -830,10 +849,10 @@ func collectFsckSuspects(
 	}
 
 	results.narFilesWithChunkIssues = narFilesWithChunkIssues
-	logger.Info().Int("count", len(narFilesWithChunkIssues)).Msg("phase 1f: NAR files with chunk issues found")
+	fsckCheckDone(logger, "1f", len(narFilesWithChunkIssues))
 
 	// g. CDC NAR files with size mismatch (total_chunks > 0 but file_size != narinfos.nar_size)
-	logger.Info().Msg("phase 1g: checking CDC NAR files with size mismatch")
+	fsckCheckStart(logger, "1g")
 
 	narFilesWithSizeMismatch, err := queryCDCNarFilesWithSizeMismatch(ctx, dbClient)
 	if err != nil {
@@ -871,15 +890,12 @@ func collectFsckSuspects(
 		}
 	}
 
-	logger.Info().
-		Int("count", len(results.narFilesWithSizeMismatch)).
-		Msg("phase 1g: CDC NAR files with size mismatch found")
+	fsckCheckDone(logger, "1g", len(results.narFilesWithSizeMismatch))
 
-	// h. Orphaned chunk files in storage (before content checks so we skip orphan hashes)
-	logger.Info().Msg("phase 1h: checking orphaned chunk files in storage")
-
-	// The total number of chunks in storage is not known beforehand, so we cannot
-	// accurately report a percentage for phase 1h. We'll rely on the checked count.
+	// h. Orphaned chunk files in storage (before content checks so we skip orphan hashes).
+	// The total number of chunks in storage is not known beforehand, so phase 1h
+	// reports the checked count rather than a percentage.
+	fsckCheckStart(logger, "1h")
 
 	orphaned, err := collectOrphanedChunksInStorage(ctx, dbClient, chunkStore, &checked)
 	if err != nil {
@@ -887,9 +903,11 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedChunksInStorage = orphaned
-	logger.Info().Int("count", len(orphaned)).Msg("phase 1h: orphaned chunk files found")
+	fsckCheckDone(logger, "1h", len(orphaned))
 
 	if !verifyContent {
+		logPhase1Done()
+
 		return results, nil
 	}
 
@@ -901,7 +919,7 @@ func collectFsckSuspects(
 	}
 
 	// i. Chunk content hash verification.
-	logger.Info().Msg("phase 1i: verifying chunk content hashes")
+	fsckCheckStart(logger, "1i")
 
 	corruptNarFiles, err := collectNarFilesWithCorruptChunks(
 		ctx, dbClient, chunkStore, allNarFiles, chunkIssueIDs, verifiedSince,
@@ -911,7 +929,7 @@ func collectFsckSuspects(
 	}
 
 	results.narFilesWithCorruptChunks = corruptNarFiles
-	logger.Info().Int("count", len(corruptNarFiles)).Msg("phase 1i: NAR files with corrupt chunks found")
+	fsckCheckDone(logger, "1i", len(corruptNarFiles))
 
 	// Build set of corrupt IDs to skip in the NAR hash check.
 	corruptByID := make(map[int]struct{}, len(corruptNarFiles))
@@ -920,7 +938,7 @@ func collectFsckSuspects(
 	}
 
 	// j. End-to-end NAR hash verification.
-	logger.Info().Msg("phase 1j: verifying assembled NAR hashes")
+	fsckCheckStart(logger, "1j")
 
 	hashMismatchNarFiles, err := collectNarFilesWithHashMismatch(
 		ctx, dbClient, chunkStore, allNarFiles, chunkIssueIDs, corruptByID, verifiedSince,
@@ -930,7 +948,9 @@ func collectFsckSuspects(
 	}
 
 	results.narFilesWithHashMismatch = hashMismatchNarFiles
-	logger.Info().Int("count", len(hashMismatchNarFiles)).Msg("phase 1j: NAR files with hash mismatch found")
+	fsckCheckDone(logger, "1j", len(hashMismatchNarFiles))
+
+	logPhase1Done()
 
 	return results, nil
 }
@@ -1032,24 +1052,28 @@ func reVerifyFsckSuspects(
 	// Setup progress tracking for phase 2
 	totalSuspects := suspects.totalIssues()
 
-	var checked, remaining atomic.Int64
-
-	remaining.Store(int64(totalSuspects))
+	var checked atomic.Int64
 
 	startTime := time.Now()
 
-	logger.Info().Int("total", totalSuspects).Msg("phase 2: re-verifying suspects")
-
-	// Start background progress ticker
+	// Start background progress ticker. The periodic update carries only the
+	// uniform progress fields; the confirmed-issue count is reported in the
+	// phase-2 done line.
 	stopTicker := startProgressTicker(func() {
-		c := checked.Load()
-		t := int64(totalSuspects)
-		r := remaining.Load()
-		logProgress(*logger, startTime, c, t).
-			Int64("remaining", r).
-			Msg("phase 2: progress update")
+		logProgress(*logger, "phase 2: re-verifying", startTime, checked.Load(), int64(totalSuspects)).
+			Msg("progress update")
 	})
 	defer stopTicker()
+
+	// logPhase2Done emits the uniform phase-2 completion line on every success
+	// path, reporting how many suspects survived re-verification.
+	logPhase2Done := func() {
+		logger.Info().
+			Str("phase", "2").
+			Int64("checked", checked.Load()).
+			Int("confirmed", results.totalIssues()).
+			Msg("phase 2: re-verify complete")
+	}
 
 	// Re-verify: narinfos without nar_files
 	for _, ni := range suspects.narinfosWithoutNarFiles {
@@ -1065,7 +1089,6 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	// Re-verify: orphaned nar_files in DB
@@ -1089,7 +1112,6 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	// Re-verify: nar_files missing from storage
@@ -1104,7 +1126,6 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	// Re-verify: orphaned NAR files in storage
@@ -1125,10 +1146,11 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	if !suspects.cdcMode {
+		logPhase2Done()
+
 		return results, nil
 	}
 
@@ -1151,7 +1173,6 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	// Re-verify: NAR files with chunk issues
@@ -1167,7 +1188,6 @@ func reVerifyFsckSuspects(
 			}
 
 			checked.Add(1)
-			remaining.Add(-1)
 		}
 	}
 
@@ -1189,7 +1209,6 @@ func reVerifyFsckSuspects(
 			}
 
 			checked.Add(1)
-			remaining.Add(-1)
 		}
 	}
 
@@ -1207,10 +1226,11 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	if !suspects.verifyContent || chunkStore == nil {
+		logPhase2Done()
+
 		return results, nil
 	}
 
@@ -1226,7 +1246,6 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
 
 	// Re-verify: NAR files with hash mismatch.
@@ -1241,8 +1260,9 @@ func reVerifyFsckSuspects(
 		}
 
 		checked.Add(1)
-		remaining.Add(-1)
 	}
+
+	logPhase2Done()
 
 	return results, nil
 }
@@ -1443,11 +1463,47 @@ func repairFsckIssues(
 	narStore storage.NarStore,
 	chunkStore chunk.Store,
 	results *fsckResults,
-) error {
+) (err error) {
 	logger := zerolog.Ctx(ctx)
+
+	// Phase 3 progress: report through the same shared ticker/logProgress path as
+	// the scan phases. total is the confirmed-issue count entering repair; checked
+	// advances as each issue category is processed.
+	total := int64(results.totalIssues())
+
+	var checked atomic.Int64
+
+	startTime := time.Now()
+
+	stopTicker := startProgressTicker(func() {
+		logProgress(*logger, "phase 3: repairing", startTime, checked.Load(), total).
+			Msg("progress update")
+	})
+	defer stopTicker()
+
+	defer func() {
+		if err != nil {
+			logger.Warn().
+				Err(err).
+				Str("phase", "3").
+				Int64("checked", checked.Load()).
+				Int64("total", total).
+				Msg("phase 3: repair aborted")
+
+			return
+		}
+
+		logger.Info().
+			Str("phase", "3").
+			Int64("checked", checked.Load()).
+			Int64("total", total).
+			Msg("phase 3: repair complete")
+	}()
 
 	// a. Repair or delete narinfos without nar_files
 	for _, ni := range results.narinfosWithoutNarFiles {
+		checked.Add(1)
+
 		// Re-verify before acting
 		hasNarFile, err := dbClient.Ent().NarFile.Query().
 			Where(entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID))).
@@ -1489,6 +1545,8 @@ func repairFsckIssues(
 
 	// b. Delete orphaned nar_files in DB
 	for _, nf := range results.orphanedNarFilesInDB {
+		checked.Add(1)
+
 		// Re-verify before deleting
 		hasLink, err := dbClient.Ent().NarInfo.Query().
 			Where(entnarinfo.HasNarInfoNarFilesWith(
@@ -1538,6 +1596,8 @@ func repairFsckIssues(
 	}
 
 	for _, nf := range results.narFilesMissingInStorage {
+		checked.Add(1)
+
 		// Re-verify before deleting
 		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
 		if err != nil {
@@ -1600,6 +1660,8 @@ func repairFsckIssues(
 	nd, hasDeleter := narStore.(narDeleter)
 
 	for _, narURL := range results.orphanedNarFilesInStorage {
+		checked.Add(1)
+
 		// Re-verify before deleting
 		exists, err := dbClient.Ent().NarFile.Query().
 			Where(
@@ -1644,6 +1706,8 @@ func repairFsckIssues(
 	}
 
 	for _, c := range results.orphanedChunksInDB {
+		checked.Add(1)
+
 		if _, ok := recheckMap[c.ID]; !ok {
 			continue
 		}
@@ -1660,6 +1724,8 @@ func repairFsckIssues(
 		if err := repairBrokenCDCNarFiles(ctx, dbClient, chunkStore, results.narFilesWithChunkIssues, logger); err != nil {
 			return err
 		}
+
+		checked.Add(int64(len(results.narFilesWithChunkIssues)))
 	}
 
 	// f2. Delete CDC nar_files with size mismatch (truncated artifacts).
@@ -1669,6 +1735,8 @@ func repairFsckIssues(
 		); err != nil {
 			return err
 		}
+
+		checked.Add(int64(len(results.narFilesWithSizeMismatch)))
 	}
 
 	// f3. Delete CDC nar_files with corrupt chunk content.
@@ -1682,6 +1750,8 @@ func repairFsckIssues(
 		); err != nil {
 			return err
 		}
+
+		checked.Add(int64(len(results.narFilesWithCorruptChunks)))
 	}
 
 	// f4. Delete CDC nar_files with assembled NAR hash mismatch.
@@ -1695,11 +1765,15 @@ func repairFsckIssues(
 		); err != nil {
 			return err
 		}
+
+		checked.Add(int64(len(results.narFilesWithHashMismatch)))
 	}
 
 	// g. Delete orphaned chunk files from storage
 	if chunkStore != nil {
 		for _, hash := range results.orphanedChunksInStorage {
+			checked.Add(1)
+
 			// Re-verify before deleting
 			exists, err := dbClient.Ent().Chunk.Query().
 				Where(entchunk.HashEQ(hash)).
@@ -2541,6 +2615,156 @@ func narFileRowToURL(hash, compression, query string) (nar.URL, error) {
 	}, nil
 }
 
+// fsckCheckActivation gates whether a phase-1 sub-check runs for a given
+// invocation. It is a pure function of CDC mode and the --verify-content flag.
+type fsckCheckActivation int
+
+const (
+	// fsckCheckAlways runs on every fsck invocation.
+	fsckCheckAlways fsckCheckActivation = iota
+	// fsckCheckCDC runs only when CDC mode is detected.
+	fsckCheckCDC
+	// fsckCheckVerifyContent runs only under CDC mode with --verify-content set.
+	fsckCheckVerifyContent
+)
+
+// active reports whether a check with this activation runs given the resolved
+// mode/flag state.
+func (a fsckCheckActivation) active(cdcMode, verifyContent bool) bool {
+	switch a {
+	case fsckCheckCDC:
+		return cdcMode
+	case fsckCheckVerifyContent:
+		return cdcMode && verifyContent
+	case fsckCheckAlways:
+		return true
+	default:
+		return true
+	}
+}
+
+// fsckCheck describes a single phase-1 sub-check: a stable id for log
+// correlation, a human-readable description, and when it is active. The
+// description is the single source of truth for both the run plan and the
+// per-check start/done log lines, so the plan can never drift from what runs.
+type fsckCheck struct {
+	id          string
+	description string
+	activation  fsckCheckActivation
+}
+
+// fsckPhase1Checks lists the phase-1 sub-checks in execution order. Register any
+// new sub-check here so it appears in the run plan and gets uniform start/done
+// logging automatically. The order mirrors collectFsckSuspects and the summary
+// table rows.
+//
+//nolint:gochecknoglobals // immutable lookup table; the single source of truth for phase labels.
+var fsckPhase1Checks = []fsckCheck{
+	{"1a", "narinfos with no linked nar_file", fsckCheckAlways},
+	{"1b", "orphaned nar_files in the database", fsckCheckAlways},
+	{"1c", "nar_files missing from storage", fsckCheckAlways},
+	{"1d", "orphaned NAR files in storage", fsckCheckAlways},
+	{"1e", "orphaned chunks in the database", fsckCheckCDC},
+	{"1f", "NAR files with chunk issues", fsckCheckCDC},
+	{"1g", "CDC NAR files with size mismatch", fsckCheckCDC},
+	{"1h", "orphaned chunk files in storage", fsckCheckCDC},
+	{"1i", "corrupt chunk content", fsckCheckVerifyContent},
+	{"1j", "assembled NAR hash mismatch", fsckCheckVerifyContent},
+}
+
+// fsckChecksByID indexes fsckPhase1Checks by id for label lookups at log sites.
+//
+//nolint:gochecknoglobals // derived immutable index over fsckPhase1Checks.
+var fsckChecksByID = func() map[string]fsckCheck {
+	m := make(map[string]fsckCheck, len(fsckPhase1Checks))
+	for _, c := range fsckPhase1Checks {
+		m[c.id] = c
+	}
+
+	return m
+}()
+
+// activeFsckPhase1Checks returns the phase-1 sub-checks that run for the given
+// mode/flag state, in execution order.
+func activeFsckPhase1Checks(cdcMode, verifyContent bool) []fsckCheck {
+	out := make([]fsckCheck, 0, len(fsckPhase1Checks))
+
+	for _, c := range fsckPhase1Checks {
+		if c.activation.active(cdcMode, verifyContent) {
+			out = append(out, c)
+		}
+	}
+
+	return out
+}
+
+// fsckRunMode is the resolved top-level behavior of an fsck run, used to describe
+// the repair phase in the run plan.
+type fsckRunMode int
+
+const (
+	// fsckModeReport reports issues and prompts interactively before repairing.
+	fsckModeReport fsckRunMode = iota
+	// fsckModeDryRun reports only; it never repairs (--dry-run).
+	fsckModeDryRun
+	// fsckModeRepair repairs confirmed issues without prompting (--repair).
+	fsckModeRepair
+)
+
+// fsckRunModeOf resolves the run mode from the --dry-run/--repair flags. --dry-run
+// dominates --repair because the command returns after reporting in dry-run mode.
+func fsckRunModeOf(dryRun, repair bool) fsckRunMode {
+	switch {
+	case dryRun:
+		return fsckModeDryRun
+	case repair:
+		return fsckModeRepair
+	default:
+		return fsckModeReport
+	}
+}
+
+// fsckCheckStart logs the uniform start line for a phase-1 sub-check.
+func fsckCheckStart(logger *zerolog.Logger, id string) {
+	logger.Info().Str("phase", id).Msgf("phase %s: checking %s", id, fsckChecksByID[id].description)
+}
+
+// fsckCheckDone logs the uniform done line for a phase-1 sub-check, carrying the
+// number of issues it found.
+func fsckCheckDone(logger *zerolog.Logger, id string, found int) {
+	logger.Info().
+		Str("phase", id).
+		Int("found", found).
+		Msgf("phase %s: %s — done", id, fsckChecksByID[id].description)
+}
+
+// printFsckRunPlan prints, before any scanning begins, the phases fsck will run
+// for the current invocation: the active phase-1 sub-checks (gated by CDC mode
+// and --verify-content), the re-verify phase, and whether a repair phase runs.
+func printFsckRunPlan(w io.Writer, cdcMode, verifyContent bool, mode fsckRunMode) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "ncps fsck — planned phases for this run:")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  Phase 1 — Scan the database and storage for inconsistencies:")
+
+	for _, c := range activeFsckPhase1Checks(cdcMode, verifyContent) {
+		fmt.Fprintf(w, "      [%s] %s\n", c.id, c.description)
+	}
+
+	fmt.Fprintln(w, "  Phase 2 — Re-verify suspected issues to rule out in-flight operations")
+
+	switch mode {
+	case fsckModeRepair:
+		fmt.Fprintln(w, "  Phase 3 — Repair the confirmed issues")
+	case fsckModeDryRun:
+		fmt.Fprintln(w, "  Phase 3 — Repair: SKIPPED (--dry-run reports issues without changing anything)")
+	case fsckModeReport:
+		fmt.Fprintln(w, "  Phase 3 — Repair: runs only if you confirm at the prompt")
+	}
+
+	fmt.Fprintln(w)
+}
+
 // startProgressTicker starts a goroutine that logs progress every 30 seconds.
 // It returns a function that should be called to stop the ticker.
 func startProgressTicker(logFn func()) (stop func()) {
@@ -2568,12 +2792,14 @@ func startProgressTicker(logFn func()) (stop func()) {
 //nolint:zerologlint
 func logProgress(
 	logger zerolog.Logger,
+	phase string,
 	startTime time.Time,
 	checked int64,
 	total int64,
 ) *zerolog.Event {
 	elapsed := time.Since(startTime).Seconds()
 	evt := logger.Info().
+		Str("phase", phase).
 		Int64("checked", checked).
 		Int64("total", total)
 
