@@ -180,6 +180,7 @@ ncps fsck \
 | `--dry-run` | Show what would be fixed without making any changes |
 | `--verified-since` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) |
 | `--verify-content` | _(CDC only)_ Read and hash every chunk's decompressed bytes to detect corruption. Expensive — reads all chunk data from storage. Combine with `--verified-since` to limit scope. |
+| `--cache-temp-path` | Directory the cache uses for temporary files when `--repair` builds a cache (env `CACHE_TEMP_PATH`, config `cache.temp-path`; default: system temp). On hardened deployments with a read-only root filesystem, point this at a writable directory (e.g. a mounted `emptyDir`) — otherwise `--repair` fails its temp-directory writability check before performing any repair. |
 
 ### Storage Flags
 
