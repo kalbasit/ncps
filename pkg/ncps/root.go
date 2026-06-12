@@ -77,6 +77,7 @@ const (
 
 	// Flag usage strings.
 	flagUsageStorageLocal       = "The local data path used for configuration and cache storage (use this OR S3 storage)"
+	flagUsageCacheTempPath      = "The path to the temporary directory that is used by the cache to download NAR files"
 	flagUsageS3Bucket           = "S3 bucket name for storage (use this OR --cache-storage-local for local storage)"
 	flagUsageS3AccessKeyID      = "S3 access key ID"
 	flagUsageS3Endpoint         = "S3-compatible endpoint URL with scheme"

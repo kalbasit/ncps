@@ -253,6 +253,12 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				Sources: flagSources("cache.fsck.dechunk-residue-grace", "CACHE_FSCK_DECHUNK_RESIDUE_GRACE"),
 				Value:   defaultDechunkResidueGrace,
 			},
+			&cli.StringFlag{
+				Name:    flagNameCacheTempPath,
+				Usage:   flagUsageCacheTempPath,
+				Sources: flagSources("cache.temp-path", "CACHE_TEMP_PATH"),
+				Value:   os.TempDir(),
+			},
 
 			// Storage Flags
 			&cli.StringFlag{
