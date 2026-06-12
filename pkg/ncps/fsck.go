@@ -1467,9 +1467,14 @@ func repairFsckIssues(
 	logger := zerolog.Ctx(ctx)
 
 	// Phase 3 progress: report through the same shared ticker/logProgress path as
-	// the scan phases. total is the confirmed-issue count entering repair; checked
-	// advances as each issue category is processed.
-	total := int64(results.totalIssues())
+	// the scan phases. total is the confirmed-issue count this function actually
+	// repairs; checked advances as each issue category is processed. The chunked-
+	// residue categories are excluded because they are reconciled separately by
+	// reconcileChunkedResidue in fsckCommand, not here — counting them would leave
+	// checked permanently short of total.
+	total := int64(results.totalIssues() -
+		len(results.recoverableChunkedNarFiles) -
+		len(results.reclaimableChunkedResidue))
 
 	var checked atomic.Int64
 
