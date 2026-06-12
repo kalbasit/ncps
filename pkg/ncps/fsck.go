@@ -645,11 +645,39 @@ func collectFsckSuspects(
 
 	startTime := time.Now()
 
-	// Start background progress ticker. The periodic update carries only the
-	// uniform progress fields (phase, checked, total, percent, rate); the
-	// suspect/skipped tallies are reported in the phase-1 done line below.
+	// current tracks the active phase-1 sub-check so the periodic ticker can name
+	// what it is scanning. startCheck records it and emits the uniform start line.
+	var current atomic.Pointer[fsckCheck]
+
+	startCheck := func(id string) {
+		c := fsckChecksByID[id]
+		current.Store(&c)
+		fsckCheckStart(logger, id)
+	}
+
+	// boundedChecks are the sub-checks whose progress is bounded by the shared
+	// NAR-scan total (the nar_file rows + indexed storage NARs). The chunk-storage
+	// walks have no size known up front, so the ticker omits total/percent for them
+	// rather than showing a denominator that `checked` overruns.
+	boundedChecks := map[string]bool{"1c": true, "1d": true, "1f": true}
+
+	// Start background progress ticker. The periodic update names the active
+	// sub-check (phase id + description) and carries the uniform progress fields;
+	// the suspect/skipped tallies are reported in the phase-1 done line below.
 	stopTicker := startProgressTicker(func() {
-		logProgress(*logger, "phase 1: scanning", startTime, checked.Load(), total.Load()).
+		phaseID, desc := "1", "scanning"
+
+		var t int64
+
+		if cur := current.Load(); cur != nil {
+			phaseID, desc = cur.id, cur.description
+			if boundedChecks[cur.id] {
+				t = total.Load()
+			}
+		}
+
+		logProgress(*logger, phaseID, startTime, checked.Load(), t).
+			Str("check", desc).
 			Msg("progress update")
 	})
 	defer stopTicker()
@@ -666,7 +694,7 @@ func collectFsckSuspects(
 	}
 
 	// a. Narinfos without nar_files
-	fsckCheckStart(logger, "1a")
+	startCheck("1a")
 
 	narinfosWithoutNarFiles, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.Not(entnarinfo.HasNarInfoNarFiles())).
@@ -679,7 +707,7 @@ func collectFsckSuspects(
 	fsckCheckDone(logger, "1a", len(narinfosWithoutNarFiles))
 
 	// b. Orphaned nar_files in DB
-	fsckCheckStart(logger, "1b")
+	startCheck("1b")
 
 	orphanedNarFiles, err := dbClient.Ent().NarFile.Query().
 		Where(entnarfile.Not(entnarfile.HasNarInfoNarFiles())).
@@ -692,7 +720,7 @@ func collectFsckSuspects(
 	fsckCheckDone(logger, "1b", len(orphanedNarFiles))
 
 	// c. Nar_files missing from storage
-	fsckCheckStart(logger, "1c")
+	startCheck("1c")
 
 	allNarFiles, err := dbClient.Ent().NarFile.Query().All(ctx)
 	if err != nil {
@@ -775,7 +803,7 @@ func collectFsckSuspects(
 	fsckCheckDone(logger, "1c", len(results.narFilesMissingInStorage))
 
 	// d. Orphaned NAR files in storage
-	fsckCheckStart(logger, "1d")
+	startCheck("1d")
 
 	narWalker, ok := narStore.(NarWalker)
 	if ok {
@@ -814,7 +842,7 @@ func collectFsckSuspects(
 	}
 
 	// e. Orphaned chunks in DB
-	fsckCheckStart(logger, "1e")
+	startCheck("1e")
 
 	orphanedChunks, err := dbClient.Ent().Chunk.Query().
 		Where(entchunk.Not(entchunk.HasNarFileLinks())).
@@ -839,7 +867,7 @@ func collectFsckSuspects(
 	}
 
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
-	fsckCheckStart(logger, "1f")
+	startCheck("1f")
 
 	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(
 		ctx, dbClient, allNarFiles, chunkStore, &checked, verifiedSince,
@@ -852,7 +880,7 @@ func collectFsckSuspects(
 	fsckCheckDone(logger, "1f", len(narFilesWithChunkIssues))
 
 	// g. CDC NAR files with size mismatch (total_chunks > 0 but file_size != narinfos.nar_size)
-	fsckCheckStart(logger, "1g")
+	startCheck("1g")
 
 	narFilesWithSizeMismatch, err := queryCDCNarFilesWithSizeMismatch(ctx, dbClient)
 	if err != nil {
@@ -895,7 +923,7 @@ func collectFsckSuspects(
 	// h. Orphaned chunk files in storage (before content checks so we skip orphan hashes).
 	// The total number of chunks in storage is not known beforehand, so phase 1h
 	// reports the checked count rather than a percentage.
-	fsckCheckStart(logger, "1h")
+	startCheck("1h")
 
 	orphaned, err := collectOrphanedChunksInStorage(ctx, dbClient, chunkStore, &checked)
 	if err != nil {
@@ -919,7 +947,7 @@ func collectFsckSuspects(
 	}
 
 	// i. Chunk content hash verification.
-	fsckCheckStart(logger, "1i")
+	startCheck("1i")
 
 	corruptNarFiles, err := collectNarFilesWithCorruptChunks(
 		ctx, dbClient, chunkStore, allNarFiles, chunkIssueIDs, verifiedSince,
@@ -938,7 +966,7 @@ func collectFsckSuspects(
 	}
 
 	// j. End-to-end NAR hash verification.
-	fsckCheckStart(logger, "1j")
+	startCheck("1j")
 
 	hashMismatchNarFiles, err := collectNarFilesWithHashMismatch(
 		ctx, dbClient, chunkStore, allNarFiles, chunkIssueIDs, corruptByID, verifiedSince,
@@ -1060,7 +1088,8 @@ func reVerifyFsckSuspects(
 	// uniform progress fields; the confirmed-issue count is reported in the
 	// phase-2 done line.
 	stopTicker := startProgressTicker(func() {
-		logProgress(*logger, "phase 2: re-verifying", startTime, checked.Load(), int64(totalSuspects)).
+		logProgress(*logger, "2", startTime, checked.Load(), int64(totalSuspects)).
+			Str("check", "re-verifying suspects").
 			Msg("progress update")
 	})
 	defer stopTicker()
@@ -1481,7 +1510,8 @@ func repairFsckIssues(
 	startTime := time.Now()
 
 	stopTicker := startProgressTicker(func() {
-		logProgress(*logger, "phase 3: repairing", startTime, checked.Load(), total).
+		logProgress(*logger, "3", startTime, checked.Load(), total).
+			Str("check", "repairing issues").
 			Msg("progress update")
 	})
 	defer stopTicker()
@@ -2805,12 +2835,18 @@ func logProgress(
 	elapsed := time.Since(startTime).Seconds()
 	evt := logger.Info().
 		Str("phase", phase).
-		Int64("checked", checked).
-		Int64("total", total)
+		Int64("checked", checked)
 
-	if total > 0 && checked <= total {
-		pct := float64(checked) / float64(total) * 100
-		evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
+	// total <= 0 means the size of this work is not known up front (e.g. a
+	// storage walk). Omit total and percent entirely rather than emitting a
+	// denominator that `checked` will overrun and a percent that never moves.
+	if total > 0 {
+		evt = evt.Int64("total", total)
+
+		if checked <= total {
+			pct := float64(checked) / float64(total) * 100
+			evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
+		}
 	}
 
 	if elapsed > 0 && checked > 0 {
