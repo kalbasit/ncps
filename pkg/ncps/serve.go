@@ -139,6 +139,11 @@ func serveCommand(
 				Sources: flagSources("cache.allow-put-verb", "CACHE_ALLOW_PUT_VERB"),
 			},
 			&cli.StringFlag{
+				Name:    "cache-get-token",
+				Usage:   "Bearer token required to access GET and HEAD routes. When set, requests without a matching Authorization: Bearer <token> header are rejected with 401 Unauthorized. /healthz and /metrics are always exempt.",
+				Sources: flagSources("cache.get-token", "CACHE_GET_TOKEN"),
+			},
+			&cli.StringFlag{
 				Name:     "cache-hostname",
 				Usage:    "The hostname of the cache server",
 				Sources:  flagSources("cache.hostname", "CACHE_HOSTNAME"),
@@ -732,6 +737,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 		srv := server.New(cache)
 		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
+		srv.SetGetToken(cmd.String("cache-get-token"))
 		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
 
 		server := &http.Server{

@@ -705,6 +705,132 @@ func newContext() context.Context {
 		WithContext(context.Background())
 }
 
+func TestSetGetToken(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-get-token-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = dbClient.Close() })
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	t.Cleanup(c.Close)
+
+	const secretToken = "test-bearer-token"
+
+	narInfoPath := "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+
+	tests := []struct {
+		name           string
+		configureToken bool
+		method         string
+		path           string
+		authHeader     string
+		wantStatus     int
+	}{
+		{
+			name:           "no token configured: GET passes without auth",
+			configureToken: false,
+			method:         http.MethodGet,
+			path:           narInfoPath,
+			authHeader:     "",
+			wantStatus:     http.StatusNotFound, // cache is empty, not a 401
+		},
+		{
+			name:           "token configured: correct Bearer token allows GET",
+			configureToken: true,
+			method:         http.MethodGet,
+			path:           narInfoPath,
+			authHeader:     "Bearer " + secretToken,
+			wantStatus:     http.StatusNotFound, // cache is empty, not a 401
+		},
+		{
+			name:           "token configured: correct Bearer token allows HEAD",
+			configureToken: true,
+			method:         http.MethodHead,
+			path:           narInfoPath,
+			authHeader:     "Bearer " + secretToken,
+			wantStatus:     http.StatusNotFound, // cache is empty, not a 401
+		},
+		{
+			name:           "token configured: missing auth header returns 401",
+			configureToken: true,
+			method:         http.MethodGet,
+			path:           narInfoPath,
+			authHeader:     "",
+			wantStatus:     http.StatusUnauthorized,
+		},
+		{
+			name:           "token configured: wrong token returns 401",
+			configureToken: true,
+			method:         http.MethodGet,
+			path:           narInfoPath,
+			authHeader:     "Bearer wrong-token",
+			wantStatus:     http.StatusUnauthorized,
+		},
+		{
+			name:           "token configured: malformed auth header returns 401",
+			configureToken: true,
+			method:         http.MethodGet,
+			path:           narInfoPath,
+			authHeader:     "Basic " + secretToken,
+			wantStatus:     http.StatusUnauthorized,
+		},
+		{
+			name:           "token configured: /healthz is always exempt",
+			configureToken: true,
+			method:         http.MethodGet,
+			path:           "/healthz",
+			authHeader:     "",
+			wantStatus:     http.StatusOK,
+		},
+		{
+			name:           "token configured: PUT routes are unaffected",
+			configureToken: true,
+			method:         http.MethodPut,
+			path:           "/upload/" + testdata.Nar1.NarInfoHash + ".narinfo",
+			authHeader:     "",
+			wantStatus:     http.StatusMethodNotAllowed, // putPermitted=false
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := server.New(c)
+
+			if tc.configureToken {
+				s.SetGetToken(secretToken)
+			}
+
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)
+
+			if tc.authHeader != "" {
+				req.Header.Set("Authorization", tc.authHeader)
+			}
+
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.wantStatus, w.Code)
+		})
+	}
+}
+
 func TestGetNar_HeadBytelessNarIs404(t *testing.T) {
 	t.Parallel()
 
