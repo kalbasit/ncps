@@ -139,8 +139,10 @@ func serveCommand(
 				Sources: flagSources("cache.allow-put-verb", "CACHE_ALLOW_PUT_VERB"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-get-token",
-				Usage:   "Bearer token required to access GET and HEAD routes. When set, requests without a matching Authorization: Bearer <token> header are rejected with 401 Unauthorized. /healthz and /metrics are always exempt.",
+				Name: "cache-get-token",
+				Usage: "Bearer token required to access GET and HEAD routes. When set, requests without a " +
+					"matching Authorization: Bearer <token> header are rejected with 401 Unauthorized. " +
+					"/healthz and /metrics are always exempt.",
 				Sources: flagSources("cache.get-token", "CACHE_GET_TOKEN"),
 			},
 			&cli.StringFlag{
