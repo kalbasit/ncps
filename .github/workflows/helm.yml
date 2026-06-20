@@ -19,7 +19,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v5
         with:
-          version: v3.21.1
+          version: v4.2.2
       - name: Package Helm chart
         run: |
           CHART_VER="${{ github.ref_name }}"
