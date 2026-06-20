@@ -32,6 +32,12 @@ cache:
   allow-delete-verb: true
   # Whether to allow the PUT verb to push narInfo and nar files directly
   allow-put-verb: true
+  # Optional Bearer token required to access GET and HEAD routes. When set,
+  # requests without a matching "Authorization: Bearer <token>" header are
+  # rejected with 401 Unauthorized. /healthz and /metrics are always exempt;
+  # PUT and DELETE are unaffected. Leave empty (the default) to serve reads
+  # without authentication. Env: CACHE_GET_TOKEN.
+  get-token: ""
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
   # Download configuration

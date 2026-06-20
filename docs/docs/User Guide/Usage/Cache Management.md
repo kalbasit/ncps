@@ -235,6 +235,36 @@ nix copy --to http://your-ncps-hostname:8501/upload ./your-package
 > [!NOTE]
 > The `/upload` prefix is required for all PUT operations. This ensures that the upload is handled correctly and skips any upstream checks.
 
+## Authenticating Read Access
+
+By default, read paths (`GET`/`HEAD` for `.narinfo` and `.nar` files) are served
+without authentication. On shared or public-facing deployments you can require a
+Bearer token by setting `--cache-get-token` (env `CACHE_GET_TOKEN`):
+
+```sh
+ncps serve --cache-get-token="$(cat /etc/ncps/get-token)"
+```
+
+When set, every `GET` and `HEAD` request must include a matching
+`Authorization: Bearer <token>` header; requests without it receive
+`401 Unauthorized`. The `/healthz` and `/metrics` infrastructure routes are
+always exempt so health probes and metrics scraping keep working, and `PUT`/`DELETE`
+are unaffected (they are governed by `--cache-allow-put-verb` /
+`--cache-allow-delete-verb`).
+
+Consuming clients can supply the token via a `netrc` file referenced from
+`nix.conf` (`netrc-file`), for example:
+
+```netrc
+machine your-ncps-hostname password <token>
+```
+
+> [!NOTE]
+> The token is a shared secret. Distribute it over a secure channel and prefer
+> sourcing it from a file or secret store rather than embedding it in shell
+> history. In Kubernetes, the Helm chart sources it from a `Secret` (see
+> `config.permissions.getToken` / `getTokenExistingSecret`).
+
 ## Best Practices
 
 1. **Set reasonable max-size** - Based on available disk space

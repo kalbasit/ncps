@@ -617,3 +617,105 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: GOMEMLIMIT
+
+  # CACHE_GET_TOKEN (read-path auth) env injection
+  - it: should inject CACHE_GET_TOKEN from managed secret when getToken set in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.permissions.getToken: test-bearer-token
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-ncps
+                key: get-token
+
+  - it: should inject CACHE_GET_TOKEN from existing secret when getTokenExistingSecret set in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.permissions.getTokenExistingSecret: my-get-token-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-get-token-secret
+                key: get-token
+
+  - it: should not inject CACHE_GET_TOKEN when no token configured in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+
+  - it: should inject CACHE_GET_TOKEN from managed secret when getToken set in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      config.permissions.getToken: test-bearer-token
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-ncps
+                key: get-token
+
+  - it: should inject CACHE_GET_TOKEN from existing secret when getTokenExistingSecret set in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      config.permissions.getTokenExistingSecret: my-get-token-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-get-token-secret
+                key: get-token
+
+  - it: should not inject CACHE_GET_TOKEN when no token configured in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN

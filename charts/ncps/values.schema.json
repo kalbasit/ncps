@@ -104,6 +104,12 @@
             },
             "allowDelete": {
               "type": "boolean"
+            },
+            "getToken": {
+              "type": "string"
+            },
+            "getTokenExistingSecret": {
+              "type": "string"
             }
           }
         },

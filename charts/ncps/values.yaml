@@ -107,6 +107,16 @@ config:
     allowPut: false
     # Allow DELETE verb to delete narInfo and nar files
     allowDelete: false
+    # Optional Bearer token required on GET/HEAD requests. When set, the token is
+    # delivered to the container as the CACHE_GET_TOKEN env var sourced from a
+    # Kubernetes Secret (never the plaintext ConfigMap). /healthz and /metrics
+    # are always exempt; PUT/DELETE are unaffected. Leave empty to serve reads
+    # without authentication.
+    # Provide the token inline (a chart-managed Secret is created)...
+    getToken: ""
+    # ...or reference an existing Secret containing the token under key "get-token".
+    # When set, getToken is ignored.
+    getTokenExistingSecret: ""
 
   # NAR info signing
   signing:

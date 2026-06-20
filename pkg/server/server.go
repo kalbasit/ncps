@@ -3,6 +3,8 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -76,6 +78,7 @@ type Server struct {
 	router *chi.Mux
 
 	deletePermitted bool
+	getToken        string
 	putPermitted    bool
 }
 
@@ -94,6 +97,12 @@ func New(cache *cache.Cache) *Server {
 // SetDeletePermitted configures the server to either allow or deny access to DELETE.
 func (s *Server) SetDeletePermitted(dp bool) { s.deletePermitted = dp }
 
+// SetGetToken configures a Bearer token required to access GET and HEAD routes.
+// When non-empty, requests without a matching Authorization: Bearer <token> header
+// are rejected with 401 Unauthorized. The /healthz and /metrics routes are always
+// exempt.
+func (s *Server) SetGetToken(token string) { s.getToken = token }
+
 // SetPutPermitted configures the server to either allow or deny access to PUT.
 func (s *Server) SetPutPermitted(pp bool) { s.putPermitted = pp }
 
@@ -108,6 +117,7 @@ func (s *Server) createRouter() {
 	s.router.Use(recoverer)
 
 	s.router.Use(s.skipTelemetryForInfraRoutes)
+	s.router.Use(s.requireGetToken)
 
 	// 1. Register standard routes at the root
 	s.registerRoutes(s.router)
@@ -192,6 +202,58 @@ func (s *Server) registerRoutes(r chi.Router) {
 
 	r.Head(routeBuildTrace, s.getBuildTrace(false))
 	r.Get(routeBuildTrace, s.getBuildTrace(true))
+}
+
+// requireGetToken is a middleware that enforces Bearer token authentication for
+// GET and HEAD requests when s.getToken is non-empty. Infrastructure endpoints
+// (/healthz and /metrics) are always exempt regardless of configuration.
+func (s *Server) requireGetToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.getToken == "" {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		// Only apply to GET and HEAD; other methods have their own guards.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		// Infrastructure routes are always exempt.
+		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+
+		const bearerPrefix = "Bearer "
+
+		// Hash both tokens to a fixed length before the constant-time compare.
+		// subtle.ConstantTimeCompare returns early when the slice lengths differ,
+		// so comparing the raw variable-length tokens directly would leak the
+		// secret's length via a timing side-channel. SHA-256 digests are always
+		// 32 bytes, so the comparison time is independent of both token contents
+		// and length.
+		presented := strings.TrimPrefix(authHeader, bearerPrefix)
+		presentedHash := sha256.Sum256([]byte(presented))
+		expectedHash := sha256.Sum256([]byte(s.getToken))
+
+		if !strings.HasPrefix(authHeader, bearerPrefix) ||
+			subtle.ConstantTimeCompare(presentedHash[:], expectedHash[:]) != 1 {
+			// RFC 7235 §4.1: a 401 response must carry a challenge.
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func recoverer(next http.Handler) http.Handler {
