@@ -3,7 +3,6 @@ package ncps
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -128,24 +127,21 @@ func TestPrintFsckRunPlanNonCDC(t *testing.T) {
 	var buf bytes.Buffer
 
 	printFsckRunPlan(&buf, false, false, fsckModeReport)
-	out := buf.String()
 
-	// All three top-level phases are listed, in order.
-	assert.Less(t, strings.Index(out, "Phase 1"), strings.Index(out, "Phase 2"))
-	assert.Less(t, strings.Index(out, "Phase 2"), strings.Index(out, "Phase 3"))
-
-	// Active always-on checks are present.
-	for _, id := range []string{"1a", "1b", "1c", "1d"} {
-		assert.Contains(t, out, "["+id+"]")
-	}
-
-	// CDC and verify-content checks are absent.
-	for _, id := range []string{"1e", "1f", "1g", "1h", "1i", "1j"} {
-		assert.NotContains(t, out, "["+id+"]")
-	}
-
-	// Report mode mentions the confirmation prompt, not an unconditional repair.
-	assert.Contains(t, out, "confirm")
+	// Assert the exact run plan: no CDC mode → only the always-on phase-1 checks,
+	// and report mode → the "confirm at the prompt" Phase 3 line.
+	want := "\n" +
+		"ncps fsck — planned phases for this run:\n" +
+		"\n" +
+		"  Phase 1 — Scan the database and storage for inconsistencies:\n" +
+		"      [1a] narinfos with no linked nar_file\n" +
+		"      [1b] orphaned nar_files in the database\n" +
+		"      [1c] nar_files missing from storage\n" +
+		"      [1d] orphaned NAR files in storage\n" +
+		"  Phase 2 — Re-verify suspected issues to rule out in-flight operations\n" +
+		"  Phase 3 — Repair: runs only if you confirm at the prompt\n" +
+		"\n"
+	assert.Equal(t, want, buf.String())
 }
 
 func TestPrintFsckRunPlanCDCRepair(t *testing.T) {
@@ -154,18 +150,26 @@ func TestPrintFsckRunPlanCDCRepair(t *testing.T) {
 	var buf bytes.Buffer
 
 	printFsckRunPlan(&buf, true, false, fsckModeRepair)
-	out := buf.String()
 
-	// CDC checks now appear...
-	for _, id := range []string{"1e", "1f", "1g", "1h"} {
-		assert.Contains(t, out, "["+id+"]")
-	}
-	// ...but content checks still do not (verify-content is off).
-	for _, id := range []string{"1i", "1j"} {
-		assert.NotContains(t, out, "["+id+"]")
-	}
-
-	assert.Contains(t, out, "Repair the confirmed issues")
+	// Assert the exact run plan: CDC mode adds the chunk checks (1e–1h), but
+	// without --verify-content the content checks (1i/1j) stay out; repair mode →
+	// the "Repair the confirmed issues" Phase 3 line.
+	want := "\n" +
+		"ncps fsck — planned phases for this run:\n" +
+		"\n" +
+		"  Phase 1 — Scan the database and storage for inconsistencies:\n" +
+		"      [1a] narinfos with no linked nar_file\n" +
+		"      [1b] orphaned nar_files in the database\n" +
+		"      [1c] nar_files missing from storage\n" +
+		"      [1d] orphaned NAR files in storage\n" +
+		"      [1e] orphaned chunks in the database\n" +
+		"      [1f] NAR files with chunk issues\n" +
+		"      [1g] CDC NAR files with size mismatch\n" +
+		"      [1h] orphaned chunk files in storage\n" +
+		"  Phase 2 — Re-verify suspected issues to rule out in-flight operations\n" +
+		"  Phase 3 — Repair the confirmed issues\n" +
+		"\n"
+	assert.Equal(t, want, buf.String())
 }
 
 func TestPrintFsckRunPlanVerifyContentAndDryRun(t *testing.T) {
@@ -174,16 +178,27 @@ func TestPrintFsckRunPlanVerifyContentAndDryRun(t *testing.T) {
 	var buf bytes.Buffer
 
 	printFsckRunPlan(&buf, true, true, fsckModeDryRun)
-	out := buf.String()
 
-	// Content checks appear with CDC + verify-content.
-	for _, id := range []string{"1i", "1j"} {
-		assert.Contains(t, out, "["+id+"]")
-	}
-
-	// Dry-run advertises that repair is skipped.
-	assert.Contains(t, out, "SKIPPED")
-	assert.Contains(t, strings.ToLower(out), "dry-run")
+	// Assert the exact run plan: CDC + --verify-content adds the content checks
+	// (1i/1j); dry-run mode → the "SKIPPED" Phase 3 line.
+	want := "\n" +
+		"ncps fsck — planned phases for this run:\n" +
+		"\n" +
+		"  Phase 1 — Scan the database and storage for inconsistencies:\n" +
+		"      [1a] narinfos with no linked nar_file\n" +
+		"      [1b] orphaned nar_files in the database\n" +
+		"      [1c] nar_files missing from storage\n" +
+		"      [1d] orphaned NAR files in storage\n" +
+		"      [1e] orphaned chunks in the database\n" +
+		"      [1f] NAR files with chunk issues\n" +
+		"      [1g] CDC NAR files with size mismatch\n" +
+		"      [1h] orphaned chunk files in storage\n" +
+		"      [1i] corrupt chunk content\n" +
+		"      [1j] assembled NAR hash mismatch\n" +
+		"  Phase 2 — Re-verify suspected issues to rule out in-flight operations\n" +
+		"  Phase 3 — Repair: SKIPPED (--dry-run reports issues without changing anything)\n" +
+		"\n"
+	assert.Equal(t, want, buf.String())
 }
 
 // TestLogProgressUniformFields proves the shared progress helper emits the same
