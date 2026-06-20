@@ -494,9 +494,17 @@ type Cache struct {
 	shouldSignNarinfo bool
 
 	// requireTrustedSignature, when true, makes PutNarInfo reject any narinfo
-	// that does not carry at least one signature validating against the trusted
-	// upstream public keys. Default false preserves prior behavior.
+	// that does not carry at least one signature validating against the
+	// configured trusted upload keys. Default false preserves prior behavior.
 	requireTrustedSignature bool
+
+	// trustedUploadKeys is the operator-configured set of public keys that
+	// authorize client PUT uploads. It is intentionally decoupled from the
+	// upstream caches' public keys (which govern pull-trust): a locally-built
+	// store path is signed by the operator's own key, not by an upstream, so
+	// upload-trust must be configured separately. Consulted by
+	// verifyNarInfoTrusted only when requireTrustedSignature is true.
+	trustedUploadKeys []signature.PublicKey
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -1070,41 +1078,35 @@ func (c *Cache) GetConfig() *config.Config {
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
 
 // SetCacheRequireTrustedSignature configures whether PutNarInfo rejects
-// narinfos lacking a valid trusted upstream signature.
+// narinfos lacking a valid signature trusted by the configured upload keys.
 func (c *Cache) SetCacheRequireTrustedSignature(requireTrustedSignature bool) {
 	c.requireTrustedSignature = requireTrustedSignature
+}
+
+// SetCacheTrustedUploadKeys configures the set of public keys that authorize
+// client PUT uploads when requireTrustedSignature is enabled. These are
+// independent of the upstream caches' public keys.
+func (c *Cache) SetCacheTrustedUploadKeys(keys []signature.PublicKey) {
+	c.trustedUploadKeys = keys
 }
 
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
 // cronjob to automatically clean-up the store.
 func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
 
-// trustedPublicKeys aggregates the public keys from all configured upstream
-// caches.
-func (c *Cache) trustedPublicKeys() []signature.PublicKey {
-	c.upstreamCachesMu.RLock()
-	defer c.upstreamCachesMu.RUnlock()
-
-	var keys []signature.PublicKey
-	for _, uc := range c.upstreamCaches {
-		keys = append(keys, uc.PublicKeys()...)
-	}
-
-	return keys
-}
-
 // verifyNarInfoTrusted returns nil when requireTrustedSignature is disabled,
 // or when the narinfo carries at least one signature that validates against
-// the trusted upstream public keys. When the gate is enabled it fails closed:
-// if no trusted keys are configured, or no signature validates, it returns
-// ErrUntrustedNarInfo (matching nix's fail-closed posture so an operator
-// cannot accidentally run a no-op verifier).
+// the configured trusted upload keys. When the gate is enabled it fails closed:
+// if no trusted upload keys are configured, or no signature validates, it
+// returns ErrUntrustedNarInfo (matching nix's fail-closed posture so an
+// operator cannot accidentally run a no-op verifier). Upload-trust is
+// deliberately decoupled from the upstream pull keys.
 func (c *Cache) verifyNarInfoTrusted(narInfo *narinfo.NarInfo) error {
 	if !c.requireTrustedSignature {
 		return nil
 	}
 
-	keys := c.trustedPublicKeys()
+	keys := c.trustedUploadKeys
 	if len(keys) == 0 {
 		return ErrUntrustedNarInfo
 	}

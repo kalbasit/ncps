@@ -90,6 +90,12 @@ data:
 
       sign-narinfo: {{ ne .Values.config.signing.enabled false }}
       require-trusted-signature: {{ eq .Values.config.signing.requireTrustedSignature true }}
+      {{- with .Values.config.signing.trustedUploadKeys }}
+      trusted-upload-keys:
+        {{- range . }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
 
       upstream:
         urls:

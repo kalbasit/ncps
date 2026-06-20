@@ -946,14 +946,29 @@ func testPutNarInfoRequireTrustedSignature(factory cacheFactory) func(*testing.T
 			return count
 		}
 
-		t.Run("disabled accepts narinfo without trusted upstream signature", func(t *testing.T) {
+		parseKeys := func(t *testing.T, raw []string) []signature.PublicKey {
+			t.Helper()
+
+			keys := make([]signature.PublicKey, 0, len(raw))
+
+			for _, r := range raw {
+				pk, err := signature.ParsePublicKey(r)
+				require.NoError(t, err)
+
+				keys = append(keys, pk)
+			}
+
+			return keys
+		}
+
+		t.Run("disabled accepts narinfo without trusted upload signature", func(t *testing.T) {
 			c, _, _, _, _, cleanup := factory(t)
 			t.Cleanup(cleanup)
 
 			require.NoError(t, putNarInfo(t, c))
 		})
 
-		t.Run("enabled rejects when no trusted keys are configured", func(t *testing.T) {
+		t.Run("enabled rejects when no trusted upload keys are configured", func(t *testing.T) {
 			c, dbClient, _, _, _, cleanup := factory(t)
 			t.Cleanup(cleanup)
 
@@ -965,14 +980,41 @@ func testPutNarInfoRequireTrustedSignature(factory cacheFactory) func(*testing.T
 		})
 
 		t.Run("enabled rejects narinfo with untrusted signature", func(t *testing.T) {
+			c, dbClient, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			c.SetCacheTrustedUploadKeys(parseKeys(t,
+				[]string{"untrusted-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="}))
+			c.SetCacheRequireTrustedSignature(true)
+
+			err := putNarInfo(t, c)
+			require.ErrorIs(t, err, cache.ErrUntrustedNarInfo)
+			assert.Equal(t, 0, narInfoCount(t, dbClient))
+		})
+
+		t.Run("enabled accepts narinfo with trusted upload signature", func(t *testing.T) {
+			c, dbClient, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			c.SetCacheTrustedUploadKeys(parseKeys(t, testdata.PublicKeys()))
+			c.SetCacheRequireTrustedSignature(true)
+
+			require.NoError(t, putNarInfo(t, c))
+			assert.Equal(t, 1, narInfoCount(t, dbClient))
+		})
+
+		t.Run("enabled rejects when only an upstream key trusts the signature", func(t *testing.T) {
 			ts := testdata.NewTestServer(t, 40)
 			t.Cleanup(ts.Close)
 
 			c, dbClient, _, _, _, cleanup := factory(t)
 			t.Cleanup(cleanup)
 
+			// The upstream trusts the narinfo's signature, but upload-trust is
+			// decoupled from pull-trust: with no trusted upload keys configured,
+			// the upload is still rejected.
 			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-				PublicKeys: []string{"untrusted-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="},
+				PublicKeys: testdata.PublicKeys(),
 			})
 			require.NoError(t, err)
 
@@ -982,25 +1024,6 @@ func testPutNarInfoRequireTrustedSignature(factory cacheFactory) func(*testing.T
 			err = putNarInfo(t, c)
 			require.ErrorIs(t, err, cache.ErrUntrustedNarInfo)
 			assert.Equal(t, 0, narInfoCount(t, dbClient))
-		})
-
-		t.Run("enabled accepts narinfo with trusted upstream signature", func(t *testing.T) {
-			ts := testdata.NewTestServer(t, 40)
-			t.Cleanup(ts.Close)
-
-			c, dbClient, _, _, _, cleanup := factory(t)
-			t.Cleanup(cleanup)
-
-			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
-			})
-			require.NoError(t, err)
-
-			c.AddUpstreamCaches(newContext(), uc)
-			c.SetCacheRequireTrustedSignature(true)
-
-			require.NoError(t, putNarInfo(t, c))
-			assert.Equal(t, 1, narInfoCount(t, dbClient))
 		})
 	}
 }

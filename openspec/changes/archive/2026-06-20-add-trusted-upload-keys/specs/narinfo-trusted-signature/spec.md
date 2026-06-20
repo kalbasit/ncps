@@ -1,20 +1,4 @@
-# narinfo-trusted-signature Specification
-
-## Purpose
-
-Defines an optional, fail-closed verification gate on the client `PutNarInfo`
-(`PUT`) ingestion path. ncps re-signs every narinfo it ingests with its own key
-and serves it under that key; the upstream-fetch path already verifies incoming
-signatures against the configured trusted public keys, but the `PUT` path did not.
-This capability lets an operator require that client-uploaded narinfos carry a
-signature trusted by a dedicated set of upload keys before ncps signs and serves
-them, closing the signature-laundering gap (issue #1269). Upload-trust is
-decoupled from the upstream pull keys, so an operator can authorize their own
-build/signing key to upload self-built paths without trusting it for
-substitution. The gate defaults off, preserving backward-compatible passthru of
-client uploads.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Operator-configured trusted upload keys
 
@@ -40,6 +24,8 @@ configurable via the `--cache-trusted-upload-key` flag (repeatable), the
 - **THEN** verification of `PUT` uploads consults only the trusted upload keys
   and never the upstream caches' public keys, so pull-trust and upload-trust are
   decoupled
+
+## MODIFIED Requirements
 
 ### Requirement: Operator gate for trusted-signature verification on PUT ingestion
 

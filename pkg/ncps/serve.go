@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"github.com/sysbot/go-netrc"
@@ -316,9 +317,17 @@ func serveCommand(
 			&cli.BoolFlag{
 				Name: "cache-require-trusted-signature",
 				Usage: "Reject narinfos uploaded via PUT that do not carry a signature trusted " +
-					"by the configured upstream public keys (fail-closed). Default off.",
+					"by the configured trusted upload keys (--cache-trusted-upload-key), fail-closed. " +
+					"Default off.",
 				Sources: flagSources("cache.require-trusted-signature", "CACHE_REQUIRE_TRUSTED_SIGNATURE"),
 				Value:   false,
+			},
+			&cli.StringSliceFlag{
+				Name: "cache-trusted-upload-key",
+				Usage: "Set to a nix-format name:base64 public key authorizing PUT uploads when " +
+					"--cache-require-trusted-signature is enabled (repeatable). Independent of the " +
+					"upstream public keys.",
+				Sources: flagSources("cache.trusted-upload-keys", "CACHE_TRUSTED_UPLOAD_KEYS"),
 			},
 			&cli.StringFlag{
 				Name:    "cache-temp-path",
@@ -759,6 +768,25 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 		return nil
 	}
+}
+
+// parseTrustedUploadKeys parses operator-supplied nix-format `name:base64`
+// public keys into the signature.PublicKey form used to verify PUT uploads. It
+// returns an error on the first malformed entry so a typo fails startup rather
+// than silently producing a key set that rejects every upload.
+func parseTrustedUploadKeys(raw []string) ([]signature.PublicKey, error) {
+	keys := make([]signature.PublicKey, 0, len(raw))
+
+	for _, r := range raw {
+		pk, err := signature.ParsePublicKey(r)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing trusted upload key %q: %w", r, err)
+		}
+
+		keys = append(keys, pk)
+	}
+
+	return keys, nil
 }
 
 func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
@@ -1284,6 +1312,13 @@ func createCache(
 	}
 
 	c.AddUpstreamCaches(ctx, ucs...)
+
+	uploadKeys, err := parseTrustedUploadKeys(cmd.StringSlice("cache-trusted-upload-key"))
+	if err != nil {
+		return nil, err
+	}
+
+	c.SetCacheTrustedUploadKeys(uploadKeys)
 	c.SetCacheRequireTrustedSignature(cmd.Bool("cache-require-trusted-signature"))
 
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.

@@ -123,11 +123,16 @@ config:
     # Whether to sign narInfo files
     enabled: true
     # Reject narInfos uploaded via PUT that do not carry a signature trusted by
-    # the configured upstream public keys (fail-closed). When enabled, uploads
-    # lacking a valid trusted upstream signature are rejected, and uploads are
-    # also rejected when no trusted upstream keys are configured. Default off
+    # the configured trustedUploadKeys (fail-closed). When enabled, uploads
+    # lacking a valid trusted upload signature are rejected, and uploads are
+    # also rejected when no trusted upload keys are configured. Default off
     # preserves backward-compatible passthru of client uploads.
     requireTrustedSignature: false
+    # Public keys (nix-format name:base64) that authorize PUT uploads when
+    # requireTrustedSignature is enabled. Independent of upstream public keys:
+    # to accept your own builds, sign them and list the matching public key here.
+    trustedUploadKeys: []
+    #   - my-cache-1:abcdef0123456789...=
     # Signing key (provided via secret if not auto-generated)
     # Leave empty to auto-generate
     secretKey: ""

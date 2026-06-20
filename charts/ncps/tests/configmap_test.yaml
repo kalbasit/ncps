@@ -440,3 +440,28 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "allow-degraded-mode: true"
+
+  - it: should omit trusted-upload-keys when none are configured
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "trusted-upload-keys:"
+
+  - it: should render trusted-upload-keys when configured
+    set:
+      config.hostname: test.example.com
+      config.signing.requireTrustedSignature: true
+      config.signing.trustedUploadKeys:
+        - "my-cache-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "require-trusted-signature: true"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "trusted-upload-keys:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'my-cache-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX\+/rkCWyvRCYg3Fs='
