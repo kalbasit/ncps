@@ -255,7 +255,7 @@ are unaffected (they are governed by `--cache-allow-put-verb` /
 Consuming clients can supply the token via a `netrc` file referenced from
 `nix.conf` (`netrc-file`), for example:
 
-```
+```netrc
 machine your-ncps-hostname password <token>
 ```
 

@@ -33,12 +33,16 @@ discoverable.
   exemption in the gate is belt-and-suspenders; the `/metrics` exemption is
   load-bearing because `/metrics` is a real route handler that runs after the
   middleware. We keep both path checks for clarity and defense-in-depth.
-- **Constant-time compare.** Use `subtle.ConstantTimeCompare([]byte(got), []byte(s.getToken)) == 1`
-  guarded by a `strings.HasPrefix(authHeader, "Bearer ")` check first.
-  Rationale: ordinary `!=` short-circuits on the first differing byte and leaks
-  token bytes via response timing; `ConstantTimeCompare` does not. Alternative
-  (hashing both sides and comparing) was rejected as unnecessary complexity for
-  a single static secret.
+- **Constant-time compare over SHA-256 digests.** SHA-256-hash both the
+  presented and configured tokens to a fixed 32 bytes, then compare with
+  `subtle.ConstantTimeCompare(presentedHash[:], expectedHash[:]) == 1`, guarded
+  by a `strings.HasPrefix(authHeader, "Bearer ")` check first. Rationale:
+  ordinary `!=` short-circuits on the first differing byte and leaks token bytes
+  via response timing. `ConstantTimeCompare` fixes that, but called on the raw
+  variable-length tokens it still returns early when the slice lengths differ —
+  leaking the secret's *length* (Gemini review on PR #1406). Hashing both sides
+  first makes the compared inputs always 32 bytes, so the comparison time is
+  independent of both content and length.
 - **401 header.** Emit `WWW-Authenticate: Bearer` before writing the status, as
   RFC 7235 §4.1 requires a challenge on `401`.
 - **Helm secret handling.** The token is sensitive, so it is delivered as the

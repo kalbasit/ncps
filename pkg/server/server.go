@@ -3,6 +3,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -232,12 +233,18 @@ func (s *Server) requireGetToken(next http.Handler) http.Handler {
 
 		const bearerPrefix = "Bearer "
 
-		// Use a constant-time comparison so the per-request processing time does
-		// not reveal how many leading bytes of the token are correct (timing
-		// side-channel on the secret).
+		// Hash both tokens to a fixed length before the constant-time compare.
+		// subtle.ConstantTimeCompare returns early when the slice lengths differ,
+		// so comparing the raw variable-length tokens directly would leak the
+		// secret's length via a timing side-channel. SHA-256 digests are always
+		// 32 bytes, so the comparison time is independent of both token contents
+		// and length.
 		presented := strings.TrimPrefix(authHeader, bearerPrefix)
+		presentedHash := sha256.Sum256([]byte(presented))
+		expectedHash := sha256.Sum256([]byte(s.getToken))
+
 		if !strings.HasPrefix(authHeader, bearerPrefix) ||
-			subtle.ConstantTimeCompare([]byte(presented), []byte(s.getToken)) != 1 {
+			subtle.ConstantTimeCompare(presentedHash[:], expectedHash[:]) != 1 {
 			// RFC 7235 §4.1: a 401 response must carry a challenge.
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)

@@ -692,3 +692,30 @@ tests:
               secretKeyRef:
                 name: RELEASE-NAME-ncps
                 key: get-token
+
+  - it: should inject CACHE_GET_TOKEN from existing secret when getTokenExistingSecret set in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      config.permissions.getTokenExistingSecret: my-get-token-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-get-token-secret
+                key: get-token
+
+  - it: should not inject CACHE_GET_TOKEN when no token configured in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_GET_TOKEN
