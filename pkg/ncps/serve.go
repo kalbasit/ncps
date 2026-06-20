@@ -778,6 +778,12 @@ func parseTrustedUploadKeys(raw []string) ([]signature.PublicKey, error) {
 	keys := make([]signature.PublicKey, 0, len(raw))
 
 	for _, r := range raw {
+		// An empty CACHE_TRUSTED_UPLOAD_KEYS env var can yield a [""] slice;
+		// skip blanks so a templated/empty deployment does not fail startup.
+		if r == "" {
+			continue
+		}
+
 		pk, err := signature.ParsePublicKey(r)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing trusted upload key %q: %w", r, err)

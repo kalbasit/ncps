@@ -10,10 +10,15 @@ import (
 func TestParseTrustedUploadKeys(t *testing.T) {
 	t.Parallel()
 
-	t.Run("empty input yields no keys and no error", func(t *testing.T) {
+	t.Run("empty input or empty strings yield no keys and no error", func(t *testing.T) {
 		t.Parallel()
 
 		keys, err := parseTrustedUploadKeys(nil)
+		require.NoError(t, err)
+		assert.Empty(t, keys)
+
+		// An empty env var can surface as a [""] slice; it must be ignored.
+		keys, err = parseTrustedUploadKeys([]string{"", ""})
 		require.NoError(t, err)
 		assert.Empty(t, keys)
 	})

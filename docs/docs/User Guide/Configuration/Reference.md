@@ -235,7 +235,7 @@ The gate is fail-closed — with it enabled and no upload keys configured, every
 upload is rejected. To upload your own builds, sign them and trust the matching
 public key:
 
-```
+```bash
 # 1. Generate a key pair
 nix key generate-secret --key-name my-cache-1 > /etc/ncps-upload.sec
 nix key convert-secret-to-public < /etc/ncps-upload.sec   # → my-cache-1:<base64>
