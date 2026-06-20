@@ -260,6 +260,18 @@ tests:
           path: data["config.yaml"]
           pattern: "allow-delete-verb: true"
 
+  - it: should never place the get-token in the plaintext ConfigMap
+    set:
+      config.hostname: test.example.com
+      config.permissions.getToken: test-bearer-token
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "get-token"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "test-bearer-token"
+
   - it: should configure narinfo signing
     set:
       config.hostname: test.example.com

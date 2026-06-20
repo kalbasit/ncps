@@ -210,6 +210,7 @@ In-flight staging resolves the cross-pod serve-during-download gap for **all** m
 | `--cache-secret-key-path` | Path to signing private key | `CACHE_SECRET_KEY_PATH` | auto-generated |
 | `--cache-allow-put-verb` | Allow PUT uploads to cache (requires `/upload` prefix) | `CACHE_ALLOW_PUT_VERB` | `false` |
 | `--cache-allow-delete-verb` | Allow DELETE operations on cache | `CACHE_ALLOW_DELETE_VERB` | `false` |
+| `--cache-get-token` | Bearer token required on GET/HEAD requests when set (`/healthz` and `/metrics` always exempt; PUT/DELETE unaffected) | `CACHE_GET_TOKEN` | _(empty: reads are unauthenticated)_ |
 | `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 
 **Example:**

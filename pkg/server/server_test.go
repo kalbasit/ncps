@@ -827,6 +827,12 @@ func TestSetGetToken(t *testing.T) {
 			s.ServeHTTP(w, req)
 
 			assert.Equal(t, tc.wantStatus, w.Code)
+
+			// RFC 7235: a 401 from the read-path auth gate must advertise the
+			// Bearer challenge so clients know how to authenticate.
+			if tc.wantStatus == http.StatusUnauthorized {
+				assert.Equal(t, "Bearer", w.Header().Get("WWW-Authenticate"))
+			}
 		})
 	}
 }

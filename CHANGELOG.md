@@ -8,6 +8,20 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Optional Bearer-token authentication for read paths.** A new
+  `--cache-get-token` flag (env `CACHE_GET_TOKEN`) protects `GET` and `HEAD`
+  requests: when set, requests without a matching `Authorization: Bearer <token>`
+  header are rejected with `401 Unauthorized` (carrying a `WWW-Authenticate: Bearer`
+  challenge), with a constant-time token comparison to avoid timing side-channels.
+  The `/healthz` and `/metrics` infrastructure routes are always exempt, and
+  `PUT`/`DELETE` are unaffected (they keep their `--cache-allow-put-verb` /
+  `--cache-allow-delete-verb` guards). Empty (the default) leaves reads
+  unauthenticated, so this is opt-in and non-breaking. In the Helm chart the
+  token is delivered as the `CACHE_GET_TOKEN` env var sourced from a Kubernetes
+  Secret via `config.permissions.getToken` (chart-managed Secret) or
+  `config.permissions.getTokenExistingSecret`, never the plaintext ConfigMap.
+  (#1136)
+
 - **In-flight NAR staging for cross-pod serving during download.** A replica
   holding a download can now serve the in-flight NAR to other replicas while it
   is still downloading, by staging it to shared storage as ordered, immutable,

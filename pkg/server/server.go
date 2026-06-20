@@ -3,6 +3,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -231,7 +232,14 @@ func (s *Server) requireGetToken(next http.Handler) http.Handler {
 
 		const bearerPrefix = "Bearer "
 
-		if !strings.HasPrefix(authHeader, bearerPrefix) || strings.TrimPrefix(authHeader, bearerPrefix) != s.getToken {
+		// Use a constant-time comparison so the per-request processing time does
+		// not reveal how many leading bytes of the token are correct (timing
+		// side-channel on the secret).
+		presented := strings.TrimPrefix(authHeader, bearerPrefix)
+		if !strings.HasPrefix(authHeader, bearerPrefix) ||
+			subtle.ConstantTimeCompare([]byte(presented), []byte(s.getToken)) != 1 {
+			// RFC 7235 §4.1: a 401 response must carry a challenge.
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 
 			return

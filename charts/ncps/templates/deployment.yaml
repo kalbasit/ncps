@@ -149,6 +149,13 @@ spec:
                   key: {{ if .Values.config.redis.existingSecret }}"password"{{ else }}"redis-password"{{ end }}
             {{- end }}
             {{- end }}
+            {{- if or .Values.config.permissions.getToken .Values.config.permissions.getTokenExistingSecret }}
+            - name: CACHE_GET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.permissions.getTokenExistingSecret | default (include "ncps.fullname" .) }}
+                  key: get-token
+            {{- end }}
             {{- $scratch := dict "gomemlimitDefined" false }}
             {{- range .Values.extraEnvVars }}
               {{- if eq .name "GOMEMLIMIT" }}
