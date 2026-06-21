@@ -26,7 +26,7 @@ jobs:
       sha: ${{ steps.resolve.outputs.sha }}
       skip: ${{ steps.decide.outputs.skip }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Scheduled runs and the default dispatch test `main`; a manual dispatch
           # may override `ref` to test a branch/tag/SHA (e.g. a PR branch).
@@ -65,7 +65,7 @@ jobs:
       matrix:
         mode: [local, kubernetes]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Pin every leg to the exact SHA the gate resolved, so a mid-run push
           # to main does not split the matrix across commits.
