@@ -8,6 +8,20 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Trusted-signature gate on PUT uploads.** A new
+  `--cache-require-trusted-signature` flag (env `CACHE_REQUIRE_TRUSTED_SIGNATURE`,
+  **off by default**) makes ncps verify client-uploaded (`PUT`) narinfos before
+  re-signing and persisting them, closing the signature-laundering gap. When
+  enabled, an upload is accepted only if it carries a signature trusted by the
+  operator-configured `--cache-trusted-upload-key`s (repeatable, env
+  `CACHE_TRUSTED_UPLOAD_KEYS`; nix-format `name:base64`). Upload-trust is
+  **independent** of the upstream public keys (which govern pull-trust), so
+  operators authorize their own build/signing key to push self-built paths
+  without trusting them for substitution. The gate is fail-closed: enabled with
+  no upload keys configured rejects every upload. Exposed in the Helm chart as
+  `config.signing.requireTrustedSignature` and `config.signing.trustedUploadKeys`.
+  (#1269)
+
 - **Optional Bearer-token authentication for read paths.** A new
   `--cache-get-token` flag (env `CACHE_GET_TOKEN`) protects `GET` and `HEAD`
   requests: when set, requests without a matching `Authorization: Bearer <token>`

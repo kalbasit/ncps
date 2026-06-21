@@ -206,7 +206,8 @@ In-flight staging resolves the cross-pod serve-during-download gap for **all** m
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-sign-narinfo` | Sign NarInfo files with private key | `CACHE_SIGN_NARINFO` | `true` |
-| `--cache-require-trusted-signature` | Reject PUT-uploaded narinfos lacking a signature trusted by the configured upstream public keys (fail-closed) | `CACHE_REQUIRE_TRUSTED_SIGNATURE` | `false` |
+| `--cache-require-trusted-signature` | Reject PUT-uploaded narinfos lacking a signature trusted by the configured `--cache-trusted-upload-key`s (fail-closed; rejects all uploads when no upload keys are configured) | `CACHE_REQUIRE_TRUSTED_SIGNATURE` | `false` |
+| `--cache-trusted-upload-key` | Repeatable nix-format `name:base64` public key authorizing PUT uploads when `--cache-require-trusted-signature` is enabled; independent of the upstream public keys | `CACHE_TRUSTED_UPLOAD_KEYS` | _(empty)_ |
 | `--cache-secret-key-path` | Path to signing private key | `CACHE_SECRET_KEY_PATH` | auto-generated |
 | `--cache-allow-put-verb` | Allow PUT uploads to cache (requires `/upload` prefix) | `CACHE_ALLOW_PUT_VERB` | `false` |
 | `--cache-allow-delete-verb` | Allow DELETE operations on cache | `CACHE_ALLOW_DELETE_VERB` | `false` |
@@ -220,6 +221,32 @@ ncps serve \
   --cache-secret-key-path=/etc/ncps/secret-key \
   --cache-allow-put-verb=true \
   --netrc-file=/etc/ncps/netrc
+```
+
+### Trusted upload verification
+
+`--cache-require-trusted-signature` gates the `PUT` (`/upload`) ingestion path.
+When enabled, ncps verifies each uploaded narinfo against the keys listed in
+`--cache-trusted-upload-key` (repeatable) **before** re-signing and persisting
+it. This trust set is deliberately **independent** of the upstream public keys:
+those govern what ncps pulls, not whose uploads it accepts.
+
+The gate is fail-closed — with it enabled and no upload keys configured, every
+upload is rejected. To upload your own builds, sign them and trust the matching
+public key:
+
+```bash
+# 1. Generate a key pair
+nix key generate-secret --key-name my-cache-1 > /etc/ncps-upload.sec
+nix key convert-secret-to-public < /etc/ncps-upload.sec   # → my-cache-1:<base64>
+
+# 2. Trust the public key on the server
+ncps serve --cache-require-trusted-signature \
+  --cache-trusted-upload-key=my-cache-1:<base64> ...
+
+# 3. Sign locally before copying (nix.conf: secret-key-files = /etc/ncps-upload.sec)
+nix store sign --key-file /etc/ncps-upload.sec <store-path>
+nix copy --to https://cache.example.com/upload <store-path>
 ```
 
 ## Upstream Connection Timeouts
