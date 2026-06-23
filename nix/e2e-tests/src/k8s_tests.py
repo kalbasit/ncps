@@ -56,7 +56,7 @@ class K8sTestsCLI:
         self.verbose = verbose
         # Path to config is substituted by Nix or can be provided via env
         self.config_file = os.environ.get(
-            "CONFIG_FILE", os.path.join(REPO_ROOT, "nix/k8s-tests/config.nix")
+            "CONFIG_FILE", os.path.join(REPO_ROOT, "nix/e2e-tests/config.nix")
         )
 
     def log(self, msg: str):
@@ -377,7 +377,7 @@ spec:
             {
                 scenario_bucket_name(perm["name"])
                 for perm in permutations
-                if perm.get("storage", {}).get("type") == "s3"
+                if (perm.get("storage") or {}).get("type") == "s3"
             }
         )
         for bucket in s3_buckets:

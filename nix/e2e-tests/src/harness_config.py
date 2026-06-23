@@ -118,7 +118,12 @@ def scenario_bucket_name(scenario_name: str) -> str:
 
     The same ``ncps-<name>`` convention is mirrored in ``config.nix``
     (``generateValues``) when rendering each scenario's Helm values; keep them in
-    sync. Scenario names are kebab-case, so the result is a valid S3 bucket name.
+    sync. Scenario names are kebab-case by the catalog contract (the
+    unified-e2e-harness spec requires a stable kebab-case name), so the verbatim
+    result is already a valid S3 bucket name. The two sides are kept verbatim
+    (rather than lowercasing/normalizing) precisely so they cannot drift: plain
+    Nix has no ``toLower`` builtin, so any normalization would have to differ
+    between the two implementations and risk a bucket-name mismatch.
     """
     return f"ncps-{scenario_name}"
 
