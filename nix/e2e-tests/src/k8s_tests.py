@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional
 import requests
 import yaml
 
+from harness_config import scenario_bucket_name
+
 try:
     import boto3
     import psycopg2
@@ -357,20 +359,35 @@ spec:
                     break
             garage_exec("layout", "apply", "--version", str(version))
 
-        # 2. Create the bucket (idempotent).
-        if garage_exec("bucket", "info", "ncps-bucket", check=False).returncode != 0:
-            garage_exec("bucket", "create", "ncps-bucket")
-
-        # 3. Import the access key (idempotent).
+        # 2. Import the access key (idempotent).
         if garage_exec("key", "info", "GK1234567890abcdef12345678", check=False).returncode != 0:
             garage_exec("key", "import", "--yes", "GK1234567890abcdef12345678", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
-        # 4. Grant read+write on the bucket.
-        garage_exec(
-            "bucket", "allow", "--read", "--write", "--owner",
-            "ncps-bucket", "--key", "GK1234567890abcdef12345678",
+        # 3. Create + grant a bucket PER SCENARIO so no scenario observes objects
+        # written by another (mirrors the per-scenario ncps_<name> databases).
+        # A shared bucket let residual whole-file NARs from an earlier non-CDC
+        # scenario make a later CDC scenario skip chunking and report 0 chunks.
+        permutations = json.loads(
+            self.run_cmd(
+                ["nix", "eval", "--json", "--file", self.config_file, "permutations"],
+                capture_output=True,
+            ).stdout
         )
-        self.log("   ✅ Garage configured.")
+        s3_buckets = sorted(
+            {
+                scenario_bucket_name(perm["name"])
+                for perm in permutations
+                if perm.get("storage", {}).get("type") == "s3"
+            }
+        )
+        for bucket in s3_buckets:
+            if garage_exec("bucket", "info", bucket, check=False).returncode != 0:
+                garage_exec("bucket", "create", bucket)
+            garage_exec(
+                "bucket", "allow", "--read", "--write", "--owner",
+                bucket, "--key", "GK1234567890abcdef12345678",
+            )
+        self.log(f"   ✅ Garage configured ({len(s3_buckets)} per-scenario buckets).")
 
         # Registry
         self.log("   - Installing Container Registry...")
@@ -839,6 +856,10 @@ spec:
         creds = {
             "s3": {
                 "endpoint": "http://garage.garage.svc.cluster.local:3900",
+                # Fallback only. Each scenario uses its own bucket
+                # (scenario_bucket_name); config.nix renders the per-scenario
+                # bucket into Helm values and the validator reads it from the
+                # per-scenario deployment config.
                 "bucket": "ncps-bucket",
                 "access_key": "GK1234567890abcdef12345678",
                 "secret_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -1229,6 +1250,13 @@ spec:
                     "storage": {
                         "type": perm["storage"]["type"],
                         "path": perm["storage"].get("local", {}).get("path"),
+                        # Per-scenario bucket (s3 only) so the storage validation
+                        # check targets this scenario's bucket, not a shared one.
+                        **(
+                            {"bucket": scenario_bucket_name(perm["name"])}
+                            if perm["storage"]["type"] == "s3"
+                            else {}
+                        ),
                     },
                 }
             )

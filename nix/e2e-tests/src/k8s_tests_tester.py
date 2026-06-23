@@ -1155,7 +1155,12 @@ class NCPSTester:
                 use_ssl=False,  # Local port-forward is always unencrypted
             )
 
-            bucket = s3_config["bucket"]
+            # Prefer the scenario's own bucket (per-scenario isolation); fall
+            # back to the shared cluster bucket only if a deployment predates the
+            # per-scenario bucket field.
+            bucket = deployment_config.get("storage", {}).get("bucket") or s3_config[
+                "bucket"
+            ]
             cdc_enabled = deployment_config.get("cdc", False)
 
             if cdc_enabled:
