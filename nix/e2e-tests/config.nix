@@ -610,7 +610,15 @@ rec {
                     # s3
                     type = "s3";
                     s3 = {
-                      inherit (s3) bucket;
+                      # Per-scenario bucket so no scenario observes objects
+                      # written by another (mirrors the per-scenario ncps_<name>
+                      # database). Must match harness_config.scenario_bucket_name
+                      # and the buckets created in k8s_tests.py garage setup.
+                      # Scenario names are kebab-case by the catalog contract, so
+                      # this is already a valid S3 bucket name; kept verbatim (not
+                      # normalized) to stay byte-for-byte in sync with the Python
+                      # side (plain Nix has no toLower builtin).
+                      bucket = "ncps-${perm.name}";
                       inherit (s3) endpoint;
                       region = "us-east-1";
                       prefix = perm.name;

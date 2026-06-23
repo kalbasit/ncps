@@ -107,6 +107,27 @@ def check(cond: bool, msg: str) -> None:
     log(f"  ✓ {msg}", G)
 
 
+def scenario_bucket_name(scenario_name: str) -> str:
+    """S3 bucket name for a scenario's isolated storage.
+
+    Each kubernetes scenario gets its own bucket so it never observes objects
+    written by another scenario, mirroring the existing per-scenario database
+    isolation (``ncps_<name>``). Without this, residual whole-file NARs left in a
+    shared bucket by an earlier non-CDC scenario make a later CDC scenario skip
+    download + chunking and produce zero chunks.
+
+    The same ``ncps-<name>`` convention is mirrored in ``config.nix``
+    (``generateValues``) when rendering each scenario's Helm values; keep them in
+    sync. Scenario names are kebab-case by the catalog contract (the
+    unified-e2e-harness spec requires a stable kebab-case name), so the verbatim
+    result is already a valid S3 bucket name. The two sides are kept verbatim
+    (rather than lowercasing/normalizing) precisely so they cannot drift: plain
+    Nix has no ``toLower`` builtin, so any normalization would have to differ
+    between the two implementations and risk a bucket-name mismatch.
+    """
+    return f"ncps-{scenario_name}"
+
+
 def storage_flags(storage: str):
     """ncps CLI storage flags for `local` or `s3`."""
     if storage == "local":
