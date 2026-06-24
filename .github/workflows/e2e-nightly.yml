@@ -38,7 +38,7 @@ jobs:
       - name: Probe last-tested cache key
         id: probe
         if: github.event_name != 'workflow_dispatch'
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: .e2e-nightly
           key: e2e-nightly-tested-${{ steps.resolve.outputs.sha }}
@@ -101,7 +101,7 @@ jobs:
           mkdir -p .e2e-nightly
           echo "${{ needs.gate.outputs.sha }}" > .e2e-nightly/tested
       - name: Save last-tested cache key
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: .e2e-nightly
           key: e2e-nightly-tested-${{ needs.gate.outputs.sha }}
