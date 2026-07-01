@@ -135,6 +135,23 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **snix-castore (and other `.nar`-less opaque) upstream narinfo URLs are now
+  proxied instead of returning `HTTP 500 "invalid nar URL"`.** Upstreams such as
+  `cache.snix.dev` serve narinfos whose `URL:` field is a content-addressed
+  reference like `nar/snix-castore/<blob>?narsize=N` (`Compression: none`, no
+  `.nar` extension). ncps previously rejected these while parsing, so a request
+  for such a `.narinfo` failed with a 500 — intermittently, because upstream
+  selection races and a retry that landed on a conventional cache (e.g.
+  cache.nixos.org) succeeded. Following the Nix HTTP binary-cache protocol (the
+  narinfo `URL:` is an opaque path relative to the cache root), ncps now tolerates
+  `.nar`-less opaque URLs: it fetches the NAR from the original opaque path —
+  preserving the required query string (snix returns `400` without `?narsize=N`) —
+  keys local storage off the narinfo `NarHash`, and re-serves under its own
+  hash-named `nar/<hash>.nar` (`Compression: none`). The opaque path and query are
+  persisted so the NAR is re-fetchable from upstream after local eviction. This
+  generalizes the existing cachix UUID opaque-URL handling; conventional
+  hash-named URLs are unaffected.
+
 - **Eager-CDC narinfos are now advertised as `Compression: none` predictively.**
   Under eager CDC the durable form of a NAR is its uncompressed chunk sequence, and
   ncps has no NAR compressor — so a `.nar.xz` request during the chunking window

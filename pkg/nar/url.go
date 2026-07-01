@@ -64,6 +64,27 @@ func ParseURL(u string) (URL, error) {
 func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
 	pathPart, hash, ct, query, err := parseURLParts(u)
 	if err != nil {
+		// Recover ".nar"-less opaque upstream URLs (e.g. snix-castore's
+		// "nar/snix-castore/<blob>?narsize=N"). The Nix binary-cache protocol
+		// treats the narinfo URL as an opaque path relative to the cache root, so
+		// a pull-through proxy must tolerate paths without a ".nar" token rather
+		// than reject them. Such URLs carry no compression extension and are
+		// served uncompressed, so compression is none; the storage key comes from
+		// the narinfo NarHash. Only genuine cache-relative paths are recovered —
+		// not bare tokens like "helloworld".
+		if op, oq, ok := parseOpaqueNoNarURL(u); errors.Is(err, ErrInvalidURL) && ok {
+			if verr := ValidateHash(fallbackHash); verr != nil {
+				return URL{}, fmt.Errorf("opaque nar URL %q needs a valid fallback hash: %w", u, verr)
+			}
+
+			return URL{
+				Hash:        fallbackHash,
+				Compression: CompressionTypeNone,
+				Query:       oq,
+				opaquePath:  op,
+			}, nil
+		}
+
 		return URL{}, err
 	}
 
@@ -141,6 +162,35 @@ func parseURLParts(u string) (pathPart, hash string, ct CompressionType, query u
 	return pathPart, hash, ct, query, nil
 }
 
+// parseOpaqueNoNarURL recognises an opaque upstream NAR URL that has no ".nar"
+// token at all (e.g. snix-castore's "nar/snix-castore/<blob>?narsize=N"). It
+// returns the path (query stripped), the parsed query, and ok=true only for a
+// genuine cache-relative path: the path must contain a "/" separator (a bare
+// token such as "helloworld" is not a NAR URL) and its filename must not itself
+// contain ".nar" (that is a malformed conventional URL, handled by parseURLParts,
+// not an opaque one). The caller supplies compression (none) and the storage key.
+func parseOpaqueNoNarURL(u string) (pathPart string, query url.Values, ok bool) {
+	pathPart, rawQuery, _ := strings.Cut(u, "?")
+	if pathPart == "" || !strings.Contains(pathPart, "/") {
+		return "", nil, false
+	}
+
+	// Extract the filename without filepath.Base: a narinfo URL path always uses
+	// "/" separators, whereas filepath.Base treats "\" as a separator on Windows.
+	// pathPart is guaranteed to contain "/" by the check above.
+	filename := pathPart[strings.LastIndex(pathPart, "/")+1:]
+	if filename == "" || filename == "." || strings.Contains(filename, ".nar") {
+		return "", nil, false
+	}
+
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "", nil, false
+	}
+
+	return pathPart, query, true
+}
+
 // IsOpaque reports whether the URL carries a preserved opaque upstream path
 // (i.e. the narinfo URL was not hash-named and the storage key was derived
 // from the narinfo NarHash instead).
@@ -156,6 +206,42 @@ func (u URL) OpaquePath() string { return u.opaquePath }
 // targets the original path while local storage stays keyed off Hash.
 func (u URL) WithOpaquePath(path string) URL {
 	u.opaquePath = path
+
+	return u
+}
+
+// OpaqueUpstreamRef returns the opaque upstream path together with its query
+// string (e.g. snix-castore's "nar/snix-castore/<blob>?narsize=N"), the form
+// that must be persisted so the upstream GET can be reconstructed verbatim after
+// local eviction. It returns "" for a conventional hash-named URL. Opaque URLs
+// that carry no query (e.g. cachix UUID NARs) yield just the path, so the
+// persisted representation is unchanged for them.
+func (u URL) OpaqueUpstreamRef() string {
+	if u.opaquePath == "" {
+		return ""
+	}
+
+	if q := u.Query.Encode(); q != "" {
+		return u.opaquePath + "?" + q
+	}
+
+	return u.opaquePath
+}
+
+// WithOpaqueUpstreamRef returns a copy of the URL with an opaque upstream
+// reference (as produced by OpaqueUpstreamRef) restored: the path becomes the
+// opaque path used for the upstream GET and any query string is parsed back onto
+// the URL so it survives onto the reconstructed request. A reference without a
+// query behaves exactly like WithOpaquePath.
+func (u URL) WithOpaqueUpstreamRef(ref string) URL {
+	path, rawQuery, hasQuery := strings.Cut(ref, "?")
+	u.opaquePath = path
+
+	if hasQuery {
+		if q, err := url.ParseQuery(rawQuery); err == nil {
+			u.Query = q
+		}
+	}
 
 	return u
 }

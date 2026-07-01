@@ -1762,11 +1762,12 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 	if ni.URL != nil && *ni.URL != "" {
 		originalURL, parseErr := nar.ParseURL(*ni.URL)
 		if parseErr == nil {
-			// If the upstream URL was opaque (e.g. cachix UUID), restore the
-			// preserved path so the upstream GET targets it rather than ncps's
-			// own hash-named URL (which only exists locally).
+			// If the upstream URL was opaque (e.g. cachix UUID, or snix-castore
+			// with a ?narsize=N query), restore the preserved path and query so
+			// the upstream GET targets it rather than ncps's own hash-named URL
+			// (which only exists locally).
 			if ni.UpstreamURL != nil && *ni.UpstreamURL != "" {
-				originalURL = originalURL.WithOpaquePath(*ni.UpstreamURL)
+				originalURL = originalURL.WithOpaqueUpstreamRef(*ni.UpstreamURL)
 			}
 
 			return originalURL
@@ -4276,9 +4277,10 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	// Preserve the opaque upstream path (if any) before narURL is potentially
-	// rewritten below, so it can be persisted for re-fetch after eviction.
-	upstreamNarPath := narURL.OpaquePath()
+	// Preserve the opaque upstream path (including any query string, e.g.
+	// snix-castore's ?narsize=N) before narURL is potentially rewritten below, so
+	// it can be persisted for re-fetch after eviction.
+	upstreamNarPath := narURL.OpaqueUpstreamRef()
 
 	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
 	ds.startOnce.Do(func() { close(ds.start) })
@@ -4299,11 +4301,25 @@ func (c *Cache) pullNarInfo(
 	// narURL is modified within a background goroutine.
 	narURLForBG := narURL
 
+	// For an opaque upstream URL (cachix UUID, or snix-castore with a ?narsize=N
+	// query), the download must target the opaque path+query while local storage
+	// and serving key off ncps's own hash-named URL. Pass the opaque URL as the
+	// preferred upstream download URL and a clean hash-named key as the
+	// storage/serve URL, so the upstream query (e.g. ?narsize) never leaks into
+	// the nar_file storage key (which would 404 the NAR on a subsequent read).
+	var preferredDownloadURL *nar.URL
+
+	if narURLForBG.IsOpaque() {
+		opaqueDownloadURL := narURLForBG
+		preferredDownloadURL = &opaqueDownloadURL
+		narURLForBG = nar.URL{Hash: narURLForBG.Hash, Compression: narURLForBG.Compression}
+	}
+
 	// narPrefetchDisabled is a test-only seam: it lets tests deterministically
 	// reproduce an orphan narinfo (backing NAR never lands in storage) without
 	// racing a background NAR download.
 	if !narPrefetchDisabled(ctx) {
-		c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
+		c.prePullNar(ctx, detachedCtx, &narURLForBG, preferredDownloadURL, uc, narInfo)
 	}
 
 	// For Compression:none upstreams, NARs are stored as zstd files and served as
@@ -4324,7 +4340,16 @@ func (c *Cache) pullNarInfo(
 	// the NAR is genuinely chunked (HasNarInChunks), so the happy path is unchanged.
 	switch {
 	case narInfo.Compression == nar.CompressionTypeNone.String():
+		// Preserve any query on a conventional hash-named URL. Only an OPAQUE
+		// upstream URL (e.g. snix-castore's ?narsize=N) has its query dropped from
+		// ncps's own hash-named serve URL: that query is meaningful solely to the
+		// upstream GET and is preserved separately on the persisted opaque path,
+		// never on the URL clients see.
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		if narURL.IsOpaque() {
+			normalizedURL.Query = nil
+		}
+
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
 
@@ -4336,7 +4361,7 @@ func (c *Cache) pullNarInfo(
 		// hash-named URL keyed off the NarHash, preserving compression. The
 		// opaque path itself is persisted (upstreamNarPath) so the NAR can
 		// still be re-fetched from upstream after the local copy is evicted.
-		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression, Query: narURL.Query}
+		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression}
 		narInfo.URL = rewrittenURL.String()
 	case c.isEagerCDC():
 		// Eager CDC: advertise Compression: none predictively so clients always
@@ -4352,7 +4377,14 @@ func (c *Cache) pullNarInfo(
 		// 404), and in-flight staging serves the uncompressed bytes across the
 		// pull+chunk window. Lazy CDC is excluded (isEagerCDC gates on !lazy): it
 		// keeps the whole xz file servable as .nar.xz until migration completes.
+		// Preserve any query on a conventional hash-named URL; drop it only for an
+		// OPAQUE upstream URL (the query is meaningful solely to the upstream GET
+		// and is preserved separately on the persisted opaque path).
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		if narURL.IsOpaque() {
+			normalizedURL.Query = nil
+		}
+
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
 

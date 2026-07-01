@@ -555,6 +555,135 @@ Sig: cache.nixos.org-1:eGSj5WPpZRjwzx7eWpCyZdNsFHjhtGTZF8T4FccYXjHNkTOZoGPfplgFP
 	assert.Equal(t, []byte(narBody), got2)
 }
 
+// TestGetNarInfoSnixCastoreOpaqueURL exercises the snix-castore variant of an
+// opaque upstream narinfo: the URL: field has NO ".nar" token and carries a
+// required ?narsize=N query (e.g. cache.snix.dev's
+// "nar/snix-castore/<blob>?narsize=N", Compression: none). ncps must proxy it
+// rather than 500 with "invalid nar URL", re-serve it under its own hash-named
+// none URL, and persist the opaque path WITH its query so an evicted NAR can be
+// re-fetched (snix returns 400 without ?narsize).
+func TestGetNarInfoSnixCastoreOpaqueURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		narInfoHash = "0123456789abcdfghijklmnpqrsvwxyz"
+		narHash     = "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4"
+		narSize     = 50308
+		opaqueURL   = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=50308"
+		opaquePath  = "/nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC"
+	)
+
+	// A snix-castore narinfo: Compression: none, FileSize == NarSize, no FileHash.
+	narInfoText := fmt.Sprintf(`StorePath: /nix/store/%s-snix-1.0
+URL: %s
+Compression: none
+FileSize: %d
+NarHash: sha256:%s
+NarSize: %d
+References: %s-snix-1.0
+Sig: cache.nixos.org-1:eGSj5WPpZRjwzx7eWpCyZdNsFHjhtGTZF8T4FccYXjHNkTOZoGPfplgFP1w5bEST0/FtfV7f3AmQUVEv1NAEDg==
+`, narInfoHash, opaqueURL, narSize, narHash, narSize, narInfoHash)
+
+	narBody := testhelper.MustRandString(narSize)
+
+	// Records the query strings snix saw on the opaque NAR GETs; the upstream
+	// serves the NAR ONLY when ?narsize=N is present (mirroring snix's 400).
+	var sawNarsizeQuery atomic.Bool
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/" + narInfoHash + ".narinfo":
+			_, _ = w.Write([]byte(narInfoText))
+
+			return true
+		case opaquePath:
+			if r.URL.Query().Get("narsize") == "" {
+				// snix rejects a NAR GET without the ?narsize=N query.
+				w.WriteHeader(http.StatusBadRequest)
+
+				return true
+			}
+
+			sawNarsizeQuery.Store(true)
+			w.Header().Set("Content-Length", strconv.Itoa(len(narBody)))
+			_, _ = w.Write([]byte(narBody))
+
+			return true
+		}
+
+		return false
+	})
+
+	c, dbClient, localStore, _, rebind, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{})
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	ni, err := c.GetNarInfo(context.Background(), narInfoHash)
+	require.NoError(t, err, "snix-castore opaque upstream URL must not fail with 500")
+
+	// ncps re-serves the NAR under its own hash-named none URL keyed off NarHash.
+	wantURL := "nar/" + narHash + ".nar"
+	assert.Equal(t, wantURL, ni.URL, "served narinfo URL should be ncps's own hash-named none URL")
+	assert.Equal(t, "none", ni.Compression)
+
+	// The opaque upstream path is persisted WITH its query for later re-fetch.
+	var upstreamURL sql.NullString
+
+	err = dbClient.DB().QueryRowContext(context.Background(),
+		rebind("SELECT upstream_url FROM narinfos WHERE hash = ?"), narInfoHash).
+		Scan(&upstreamURL)
+	require.NoError(t, err)
+	assert.True(t, upstreamURL.Valid, "upstream_url should be persisted")
+	assert.Equal(t, opaqueURL, upstreamURL.String, "persisted opaque path must retain ?narsize")
+
+	narURL, err := nar.ParseURL(ni.URL)
+	require.NoError(t, err)
+
+	// The NAR is prefetched in the background; wait for it to land in the store.
+	require.Eventually(t, func() bool {
+		return c.HasNarInStore(context.Background(), narURL)
+	}, downloadPollTimeout, 10*time.Millisecond, "prefetched snix NAR should land in the store")
+
+	_, _, rc, err := c.GetNar(context.Background(), narURL)
+	require.NoError(t, err, "the NAR should be fetchable via the opaque upstream path")
+
+	defer rc.Close()
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, []byte(narBody), got)
+	assert.True(t, sawNarsizeQuery.Load(), "upstream GET must carry the ?narsize query")
+
+	// Evict local bytes and confirm re-fetch reconstructs the opaque path + query.
+	// A Compression:none NAR is physically stored under its servable compressed
+	// variant (canonically .nar.zst), so evict that representation.
+	zstdURL := narURL
+	zstdURL.Compression = nar.CompressionTypeZstd
+	require.NoError(t, localStore.DeleteNar(context.Background(), zstdURL))
+	require.False(t, c.HasNarInStore(context.Background(), narURL))
+	sawNarsizeQuery.Store(false)
+
+	_, _, rc2, err := c.GetNar(context.Background(), narURL)
+	require.NoError(t, err, "evicted snix NAR must be re-fetchable via the persisted opaque path+query")
+
+	defer rc2.Close()
+
+	got2, err := io.ReadAll(rc2)
+	require.NoError(t, err)
+	assert.Equal(t, []byte(narBody), got2)
+	assert.True(t, sawNarsizeQuery.Load(), "re-fetch GET must carry the restored ?narsize query")
+}
+
 func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		ts := testdata.NewTestServer(t, 40)
