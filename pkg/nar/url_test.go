@@ -210,11 +210,11 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		// The query string MUST survive onto the reconstructed upstream GET
 		// (snix returns 400 without ?narsize=N).
-		base, err := url.Parse("http://example.com")
+		base, err := url.Parse("https://example.com")
 		require.NoError(t, err)
 		assert.Equal(
 			t,
-			"http://example.com/nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800",
+			"https://example.com/nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800",
 			got.JoinURL(base).String(),
 		)
 	})
@@ -271,9 +271,9 @@ func TestParseUpstreamURL(t *testing.T) {
 		restored := own.WithOpaqueUpstreamRef(ref)
 		assert.True(t, restored.IsOpaque())
 
-		base, err := url.Parse("http://example.com")
+		base, err := url.Parse("https://example.com")
 		require.NoError(t, err)
-		assert.Equal(t, "http://example.com/"+u, restored.JoinURL(base).String())
+		assert.Equal(t, "https://example.com/"+u, restored.JoinURL(base).String())
 	})
 }
 

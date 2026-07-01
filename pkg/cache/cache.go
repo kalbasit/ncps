@@ -4340,10 +4340,16 @@ func (c *Cache) pullNarInfo(
 	// the NAR is genuinely chunked (HasNarInChunks), so the happy path is unchanged.
 	switch {
 	case narInfo.Compression == nar.CompressionTypeNone.String():
-		// ncps's own hash-named serve URL never carries the upstream's query
-		// (e.g. snix-castore's ?narsize=N); that query is preserved separately on
-		// the opaque upstream path for re-fetch, not on the URL clients see.
-		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone}
+		// Preserve any query on a conventional hash-named URL. Only an OPAQUE
+		// upstream URL (e.g. snix-castore's ?narsize=N) has its query dropped from
+		// ncps's own hash-named serve URL: that query is meaningful solely to the
+		// upstream GET and is preserved separately on the persisted opaque path,
+		// never on the URL clients see.
+		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		if narURL.IsOpaque() {
+			normalizedURL.Query = nil
+		}
+
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
 
@@ -4371,10 +4377,14 @@ func (c *Cache) pullNarInfo(
 		// 404), and in-flight staging serves the uncompressed bytes across the
 		// pull+chunk window. Lazy CDC is excluded (isEagerCDC gates on !lazy): it
 		// keeps the whole xz file servable as .nar.xz until migration completes.
-		// ncps's own hash-named serve URL never carries the upstream's query
-		// (e.g. snix-castore's ?narsize=N); that query is preserved separately on
-		// the opaque upstream path for re-fetch, not on the URL clients see.
-		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone}
+		// Preserve any query on a conventional hash-named URL; drop it only for an
+		// OPAQUE upstream URL (the query is meaningful solely to the upstream GET
+		// and is preserved separately on the persisted opaque path).
+		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		if narURL.IsOpaque() {
+			normalizedURL.Query = nil
+		}
+
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
 

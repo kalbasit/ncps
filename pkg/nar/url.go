@@ -175,7 +175,10 @@ func parseOpaqueNoNarURL(u string) (pathPart string, query url.Values, ok bool) 
 		return "", nil, false
 	}
 
-	filename := filepath.Base(pathPart)
+	// Extract the filename without filepath.Base: a narinfo URL path always uses
+	// "/" separators, whereas filepath.Base treats "\" as a separator on Windows.
+	// pathPart is guaranteed to contain "/" by the check above.
+	filename := pathPart[strings.LastIndex(pathPart, "/")+1:]
 	if filename == "" || filename == "." || strings.Contains(filename, ".nar") {
 		return "", nil, false
 	}
