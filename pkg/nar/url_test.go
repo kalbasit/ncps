@@ -185,6 +185,40 @@ func TestParseUpstreamURL(t *testing.T) {
 		)
 	})
 
+	t.Run("snix-castore .nar-less opaque URL preserves path+query and keys off the fallback hash", func(t *testing.T) {
+		t.Parallel()
+
+		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
+
+		got, err := nar.ParseUpstreamURL(u, fallback)
+		require.NoError(t, err)
+
+		// Storage key comes from the fallback (NarHash), not the URL.
+		fp, err := got.ToFilePath()
+		require.NoError(t, err)
+
+		wantFP, err := nar.FilePath(fallback, nar.CompressionTypeNone.ToFileExtension())
+		require.NoError(t, err)
+		assert.Equal(t, wantFP, fp)
+
+		// A .nar-less opaque URL carries no compression extension; it is none.
+		assert.Equal(t, nar.CompressionTypeNone, got.Compression)
+
+		// The opaque upstream path is preserved verbatim (query stripped) for the GET.
+		assert.True(t, got.IsOpaque())
+		assert.Equal(t, "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC", got.OpaquePath())
+
+		// The query string MUST survive onto the reconstructed upstream GET
+		// (snix returns 400 without ?narsize=N).
+		base, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		assert.Equal(
+			t,
+			"http://example.com/nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800",
+			got.JoinURL(base).String(),
+		)
+	})
+
 	t.Run("opaque URL with an invalid fallback hash errors", func(t *testing.T) {
 		t.Parallel()
 
@@ -192,11 +226,54 @@ func TestParseUpstreamURL(t *testing.T) {
 		assert.ErrorIs(t, err, nar.ErrInvalidHash)
 	})
 
+	t.Run("snix-castore .nar-less opaque URL with an invalid fallback hash errors", func(t *testing.T) {
+		t.Parallel()
+
+		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
+
+		_, err := nar.ParseUpstreamURL(u, "not-a-hash")
+		assert.ErrorIs(t, err, nar.ErrInvalidHash)
+	})
+
+	t.Run("strict ParseURL still rejects a .nar-less opaque URL", func(t *testing.T) {
+		t.Parallel()
+
+		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
+
+		_, err := nar.ParseURL(u)
+		assert.ErrorIs(t, err, nar.ErrInvalidURL)
+	})
+
 	t.Run("structurally invalid URL errors even with a valid fallback", func(t *testing.T) {
 		t.Parallel()
 
 		_, err := nar.ParseUpstreamURL("helloworld", fallback)
 		assert.ErrorIs(t, err, nar.ErrInvalidURL)
+	})
+
+	t.Run("opaque upstream ref round-trips path and query for eviction re-fetch", func(t *testing.T) {
+		t.Parallel()
+
+		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
+
+		got, err := nar.ParseUpstreamURL(u, fallback)
+		require.NoError(t, err)
+
+		// The persisted opaque reference retains the query string.
+		ref := got.OpaqueUpstreamRef()
+		assert.Equal(t, u, ref)
+
+		// On eviction the reference is restored onto ncps's own none URL; the
+		// reconstructed upstream GET MUST target the original path AND query.
+		own, err := nar.ParseURL("nar/" + fallback + ".nar")
+		require.NoError(t, err)
+
+		restored := own.WithOpaqueUpstreamRef(ref)
+		assert.True(t, restored.IsOpaque())
+
+		base, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		assert.Equal(t, "http://example.com/"+u, restored.JoinURL(base).String())
 	})
 }
 

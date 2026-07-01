@@ -50,6 +50,28 @@ Client Request: GET /nar/<path>
              [8] Stream NAR to client
 ```
 
+### Upstream NAR URL handling (opaque URLs)
+
+Per the Nix HTTP binary-cache protocol, a narinfo's `URL:` field is an **opaque
+path relative to the cache root** — ncps must not assume it is
+`nar/<hash>.nar[.<compression>]`. ncps handles three shapes:
+
+- **Conventional hash-named** (e.g. cache.nixos.org `nar/<hash>.nar.xz`): parsed
+  directly; storage and serving key off the URL hash.
+- **Opaque with a `.nar` token** (e.g. cachix `nar/<uuid>.nar.zst`): the filename
+  is not a valid Nix hash, so ncps keys local storage off the narinfo `NarHash`
+  and preserves the original path for the upstream `GET`.
+- **Opaque without a `.nar` token** (e.g. snix-castore
+  `nar/snix-castore/<blob>?narsize=N`, `Compression: none`): tolerated the same
+  way, treating compression as `none`. The full opaque path **and its query
+  string** are preserved for the upstream `GET` (snix returns `400` without
+  `?narsize=N`).
+
+For both opaque shapes ncps re-serves the NAR to clients under its own hash-named
+`nar/<NarHash>.nar[.<compression>]` URL, and persists the opaque upstream path
+(with query) so the NAR can be re-fetched from the origin after local eviction.
+The upstream query is never carried onto ncps's own hash-named serve/storage key.
+
 ## High Availability Flow
 
 With Redis distributed locking:
