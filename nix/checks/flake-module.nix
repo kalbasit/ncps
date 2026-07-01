@@ -386,7 +386,7 @@
           src = ../../.;
           outputs = [ "out" ];
           proxyVendor = true;
-          vendorHash = "sha256-yHeEWe91EOPjFkFMTpeeKJgKmAvciIk5JsGluSanUNI=";
+          vendorHash = "sha256-zas3BrnVO7EWQDq8LF3WwmcTptZgkqz5Y7uQV7DbVIs=";
           nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.git ];
           buildPhase = ''
             HOME=$TMPDIR
