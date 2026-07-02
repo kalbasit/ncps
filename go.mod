@@ -21,7 +21,7 @@ require (
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/pierrec/lz4/v4 v4.1.27
-	github.com/pressly/goose/v3 v3.27.1
+	github.com/pressly/goose/v3 v3.27.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/riandyrn/otelchi v0.12.3
