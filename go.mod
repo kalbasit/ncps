@@ -10,7 +10,7 @@ require (
 	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.2
 	github.com/go-chi/chi/v5 v5.3.0
-	github.com/go-redsync/redsync/v4 v4.16.0
+	github.com/go-redsync/redsync/v4 v4.17.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
