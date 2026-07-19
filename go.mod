@@ -1,6 +1,6 @@
 module github.com/kalbasit/ncps
 
-go 1.26.4
+go 1.26.5
 
 tool entgo.io/ent/cmd/ent
 
