@@ -15,7 +15,7 @@
         in
         if tag != "" then tag else rev;
 
-      vendorHash = "sha256-gdCW1jAyiQ6nNOv03aNdrwdf7K+czQ9bzRi4FMIQncU=";
+      vendorHash = "sha256-NvfvE0CQKSmDfafv83YFeJg3m2XO3QKJ53Vhpwvz2/I=";
 
       ncpsSrc = lib.fileset.toSource {
         fileset = lib.fileset.unions [
