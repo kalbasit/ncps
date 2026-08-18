@@ -68,6 +68,15 @@ const (
 	// which is critical for databases like MySQL under parallel test load.
 	progressivePollBatchSize = 256
 
+	// completeChunkQueryBatchSize bounds the number of nar_file_chunk links
+	// fetched per query on the completed-chunk fast serve path
+	// (collectCompleteChunkHashes). Each page's WithChunk eager-load binds at most
+	// this many parameters, so it stays well under every driver limit (older SQLite
+	// ≤ 999, modern SQLite ≤ 32766, Postgres ≤ 65535). Without this bound a NAR
+	// with more chunks than the driver limit failed to serve with "too many SQL
+	// variables" (issue #1463).
+	completeChunkQueryBatchSize = 512
+
 	// cdcCleanupHashBatchSize bounds the size of `WHERE hash IN (…)`
 	// batches issued by the CDC delayed-cleanup job. Stays well under
 	// driver parameter limits (Postgres ≤ 65535, modern SQLite ≤
@@ -8765,36 +8774,74 @@ func (c *Cache) streamCompleteChunks(
 	totalChunks int64,
 	raw bool,
 ) error {
-	// Get all chunks at once, ordered by their position in the NAR.
-	// Query the junction entity directly (rather than chunk + edge
-	// HasNarFileLinks with edge-ordering, which Ent compiles to a
-	// Postgres-incompatible `ORDER BY <join_table>.chunk_index` after
-	// the implicit GROUP BY chunk.id). Eager-load Chunk on each link.
-	chunkHashes := make([]string, 0, totalChunks)
-
-	links, err := c.dbClient.Ent().NarFileChunk.Query().
-		Where(entnarfilechunk.NarFileID(int(narFileID))).
-		Order(entnarfilechunk.ByChunkIndex()).
-		WithChunk().
-		All(ctx)
+	chunkHashes, err := c.collectCompleteChunkHashes(ctx, narFileID, totalChunks)
 	if err != nil {
-		return fmt.Errorf("error getting chunks: %w", err)
-	}
-
-	for _, link := range links {
-		if link.Edges.Chunk == nil {
-			return fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge)
-		}
-
-		chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
-	}
-
-	if len(chunkHashes) != int(totalChunks) {
-		return fmt.Errorf("expected %d chunks but got %d: %w", totalChunks, len(chunkHashes), storage.ErrNotFound)
+		return err
 	}
 
 	// Use prefetch pipeline to overlap I/O operations
 	return c.streamChunksWithPrefetch(ctx, w, chunkHashes, raw)
+}
+
+// collectCompleteChunkHashes returns the ordered chunk hashes for a completed
+// chunked NAR (total_chunks > 0), retrieving the junction links in bounded batches
+// so the number of bound parameters never exceeds the database driver's limit
+// (SQLite 32766, PostgreSQL 65535). A single unbounded
+// NarFileChunk.Query()…WithChunk().All(ctx) compiled its eager-load to
+// SELECT … FROM chunks WHERE id IN ($1 … $N) with one parameter per chunk, so a
+// NAR with more chunks than the driver limit failed with "too many SQL variables"
+// (issue #1463). The junction entity is queried directly (rather than chunk + edge
+// HasNarFileLinks with edge-ordering, which Ent compiles to a Postgres-incompatible
+// `ORDER BY <join_table>.chunk_index` after the implicit GROUP BY chunk.id); Chunk
+// is eager-loaded on each link. The completeness check
+// (len(chunkHashes) == totalChunks) still runs against the accumulated result.
+func (c *Cache) collectCompleteChunkHashes(
+	ctx context.Context,
+	narFileID int64,
+	totalChunks int64,
+) ([]string, error) {
+	chunkHashes := make([]string, 0, totalChunks)
+
+	// Keyset walk over chunk_index: each page fetches at most
+	// completeChunkQueryBatchSize links (so the WithChunk eager-load binds at most
+	// that many parameters), advancing past the last index seen. Mirrors the
+	// batching already used by streamProgressiveChunks.
+	lastIndex := -1
+
+	for {
+		links, err := c.dbClient.Ent().NarFileChunk.Query().
+			Where(
+				entnarfilechunk.NarFileID(int(narFileID)),
+				entnarfilechunk.ChunkIndexGT(lastIndex),
+			).
+			Order(entnarfilechunk.ByChunkIndex()).
+			WithChunk().
+			Limit(completeChunkQueryBatchSize).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error getting chunks: %w", err)
+		}
+
+		for _, link := range links {
+			if link.Edges.Chunk == nil {
+				return nil, fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge)
+			}
+
+			chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
+		}
+
+		if len(links) < completeChunkQueryBatchSize {
+			break
+		}
+
+		lastIndex = links[len(links)-1].ChunkIndex
+	}
+
+	if len(chunkHashes) != int(totalChunks) {
+		return nil, fmt.Errorf("expected %d chunks but got %d: %w", totalChunks, len(chunkHashes), storage.ErrNotFound)
+	}
+
+	return chunkHashes, nil
 }
 
 // prefetchedChunk holds a chunk reader and any error from fetching it.
