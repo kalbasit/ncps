@@ -28,7 +28,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
 	github.com/sorairolake/lzip-go v0.3.8
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	github.com/sysbot/go-netrc v0.0.0-20231214061310-8bb3fde9e2d4
 	github.com/ulikunitz/xz v0.5.16
 	github.com/urfave/cli-altsrc/v3 v3.1.0
