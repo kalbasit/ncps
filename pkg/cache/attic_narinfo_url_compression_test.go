@@ -30,8 +30,8 @@ import (
 //	                                          path hash is 32 chars so it is not
 //	                                          a valid nar hash either
 //	compression: "zstd"                     — the ONLY statement of compression
-//	file_hash:   None                       — attic leaves both unset (FIXME)
-//	file_size:   None
+//	file_hash:   None                       — attic leaves both unset, marked
+//	file_size:   None                          unfinished in its own source
 //
 // ncps derives a NAR's compression exclusively from the URL's file extension
 // (nar.ParseUpstreamURL -> parseURLParts), so it reads `none` here and never
@@ -434,4 +434,108 @@ References: %s-conventional-1.0
 
 	assert.Equal(t, payload, string(decodeAs(t, ni.Compression, body)),
 		"served bytes must decode under the advertised Compression (%q)", ni.Compression)
+}
+
+// TestBareNarURLWithQueryPreservesQuery guards a regression the compression
+// resolution introduced: marking a conventional hash-named URL "opaque" (so its
+// extension-less upstream path survives for the upstream GET) previously routed
+// it through the branch that DROPS the query, because that branch exists for
+// truly opaque URLs whose query belongs only to the upstream GET.
+//
+// A hash-named URL owns its query — nar_file rows are keyed by
+// (hash, compression, query) — so dropping it changes both the re-served URL and
+// the NAR's storage identity.
+func TestBareNarURLWithQueryPreservesQuery(t *testing.T) {
+	t.Parallel()
+
+	const (
+		narInfoHash = "0123456789abcdfghijklmnpqrsvwxyz"
+		narHash     = "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4"
+
+		bareURL  = "nar/" + narHash + ".nar?x=y"
+		barePath = "/nar/" + narHash + ".nar"
+	)
+
+	payload := testhelper.MustRandString(20000)
+	zstdBody := zstdCompress(t, []byte(payload))
+
+	narInfoText := fmt.Sprintf(`StorePath: /nix/store/%s-query-1.0
+URL: %s
+Compression: zstd
+NarHash: sha256:%s
+NarSize: %d
+References: %s-query-1.0
+`, narInfoHash, bareURL, narHash, len(payload), narInfoHash)
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/" + narInfoHash + ".narinfo":
+			_, _ = w.Write([]byte(narInfoText))
+
+			return true
+		case barePath:
+			// The upstream GET must carry the original query verbatim.
+			if r.URL.Query().Get("x") != "y" {
+				w.WriteHeader(http.StatusNotFound)
+
+				return true
+			}
+
+			w.Header().Set("Content-Length", strconv.Itoa(len(zstdBody)))
+			_, _ = w.Write(zstdBody)
+
+			return true
+		}
+
+		return false
+	})
+
+	c, dbClient, _, _, rebind, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{})
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	ctx := context.Background()
+
+	ni, err := c.GetNarInfo(ctx, narInfoHash)
+	require.NoError(t, err)
+
+	t.Logf("ncps serves: URL=%q Compression=%q", ni.URL, ni.Compression)
+
+	assert.Equal(t, "nar/"+narHash+".nar.zst?x=y", ni.URL,
+		"a hash-named URL owns its query, so it must survive the compression rewrite")
+
+	var narFileQuery string
+
+	err = dbClient.DB().QueryRowContext(ctx, rebind(`
+		SELECT nf.query
+		FROM narinfos ni
+		JOIN narinfo_nar_files nnf ON nnf.narinfo_id = ni.id
+		JOIN nar_files nf ON nf.id = nnf.nar_file_id
+		WHERE ni.hash = ?`), narInfoHash).Scan(&narFileQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "x=y", narFileQuery,
+		"nar_file rows are keyed by (hash, compression, query); dropping the query changes NAR identity")
+
+	reqURL, err := nar.ParseURL(ni.URL)
+	require.NoError(t, err)
+
+	_, _, rc, err := c.GetNar(ctx, reqURL)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = rc.Close() })
+
+	body, err := io.ReadAll(rc)
+	require.NoError(t, err)
+
+	assert.Equal(t, payload, string(decodeAs(t, ni.Compression, body)))
 }

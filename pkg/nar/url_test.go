@@ -709,3 +709,26 @@ func TestParseURLIgnoresDeclaredCompression(t *testing.T) {
 	assert.Equal(t, nar.CompressionTypeNone, got.Compression,
 		"ParseURL derives compression from the URL alone and takes no narinfo input")
 }
+
+// TestParseUpstreamURLResolvedCompressionKeepsQuery pins that resolving the
+// compression from the narinfo does not disturb the URL's query string: the
+// query must survive on the parsed URL so callers can decide whether it belongs
+// to ncps's serve/storage key (hash-named URLs) or only to the upstream GET
+// (truly opaque ones).
+func TestParseUpstreamURLResolvedCompressionKeepsQuery(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fallback = "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps"
+		narHash  = "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac"
+	)
+
+	got, err := nar.ParseUpstreamURL("nar/"+narHash+".nar?x=y", fallback, "zstd")
+	require.NoError(t, err)
+
+	assert.Equal(t, nar.CompressionTypeZstd, got.Compression)
+	assert.True(t, got.IsOpaque(), "the extension-less upstream path must be preserved")
+	assert.Equal(t, "y", got.Query.Get("x"))
+	assert.Equal(t, "nar/"+narHash+".nar?x=y", got.OpaqueUpstreamRef(),
+		"the upstream GET must target the original path with its query")
+}

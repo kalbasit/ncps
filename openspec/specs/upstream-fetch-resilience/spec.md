@@ -179,6 +179,13 @@ extension keeps that extension as the authoritative value, so upstreams which
 encode compression in the URL (cache.nixos.org, cachix, Harmonia, nix-serve) are
 unaffected.
 
+Reconciling a narinfo whose URL extension and `Compression:` header actively
+contradict each other (e.g. `URL: nar/<hash>.nar.xz` with `Compression: zstd`)
+is explicitly out of scope: such an upstream is self-contradictory, ncps's
+long-standing behaviour there is unchanged by this requirement, and the header
+is left as the upstream sent it. The same applies to a declared compression ncps
+does not recognise, which is ignored rather than trusted.
+
 This closes the narinfo↔nar_file compression desync produced by upstreams that
 state compression only in the header — notably Attic, whose `URL:` is always a
 bare `nar/<storePathHash>.nar` while `Compression:` is `zstd`.

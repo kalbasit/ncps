@@ -4295,6 +4295,17 @@ func (c *Cache) pullNarInfo(
 	// it can be persisted for re-fetch after eviction.
 	upstreamNarPath := narURL.OpaqueUpstreamRef()
 
+	// upstreamURLOwnsQuery distinguishes the two reasons narURL can be opaque.
+	// A hash-named upstream URL is opaque only because its compression came from
+	// the narinfo header (issue #1470); its query is part of the NAR's identity,
+	// so it must survive onto ncps's own serve/storage URL. A truly opaque URL's
+	// query (e.g. snix-castore's ?narsize=N) is meaningful solely to the upstream
+	// GET and must never leak into the nar_file key, which would 404 the NAR on a
+	// subsequent read. ParseURL is ncps's strict hash-named parser, so it
+	// accepting the original URL is exactly the "hash-named" test.
+	_, strictParseErr := nar.ParseURL(narInfo.URL)
+	upstreamURLOwnsQuery := strictParseErr == nil
+
 	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
 	ds.startOnce.Do(func() { close(ds.start) })
 
@@ -4326,6 +4337,10 @@ func (c *Cache) pullNarInfo(
 		opaqueDownloadURL := narURLForBG
 		preferredDownloadURL = &opaqueDownloadURL
 		narURLForBG = nar.URL{Hash: narURLForBG.Hash, Compression: narURLForBG.Compression}
+
+		if upstreamURLOwnsQuery {
+			narURLForBG.Query = opaqueDownloadURL.Query
+		}
 	}
 
 	// narPrefetchDisabled is a test-only seam: it lets tests deterministically
@@ -4380,6 +4395,10 @@ func (c *Cache) pullNarInfo(
 		// agree. The original path is persisted (upstreamNarPath) so the NAR can
 		// still be re-fetched from upstream after the local copy is evicted.
 		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression}
+		if upstreamURLOwnsQuery {
+			rewrittenURL.Query = narURL.Query
+		}
+
 		narInfo.URL = rewrittenURL.String()
 	case c.isEagerCDC():
 		// Eager CDC: advertise Compression: none predictively so clients always
