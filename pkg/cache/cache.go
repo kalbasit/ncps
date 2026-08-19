@@ -1818,7 +1818,11 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 		return nil, nil
 	}
 
-	originalURL, err := nar.ParseUpstreamURL(upstreamNarInfo.URL, narInfoStorageKey(upstreamNarInfo))
+	originalURL, err := nar.ParseUpstreamURL(
+		upstreamNarInfo.URL,
+		narInfoStorageKey(upstreamNarInfo),
+		upstreamNarInfo.Compression,
+	)
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
@@ -4273,7 +4277,7 @@ func (c *Cache) pullNarInfo(
 	// Tolerate opaque (non hash-named) upstream NAR URLs (e.g. cachix's UUID
 	// NARs): ParseUpstreamURL preserves the original path for the upstream GET
 	// and keys ncps's local storage off the narinfo NarHash instead.
-	narURL, err := nar.ParseUpstreamURL(narInfo.URL, narInfoStorageKey(narInfo))
+	narURL, err := nar.ParseUpstreamURL(narInfo.URL, narInfoStorageKey(narInfo), narInfo.Compression)
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Error().
@@ -4366,9 +4370,14 @@ func (c *Cache) pullNarInfo(
 		narInfo.FileHash = nil
 		narInfo.FileSize = 0
 	case narURL.IsOpaque():
-		// Opaque upstream URL (e.g. cachix UUID): re-serve under ncps's own
-		// hash-named URL keyed off the NarHash, preserving compression. The
-		// opaque path itself is persisted (upstreamNarPath) so the NAR can
+		// The upstream path cannot be rebuilt from Hash+Compression — either it is
+		// not hash-named (e.g. cachix's UUID NARs) or its compression came from the
+		// narinfo's Compression: header rather than a file extension (Attic's
+		// "nar/<storePathHash>.nar" declared zstd, issue #1470). Re-serve under
+		// ncps's own hash-named URL keyed off the NarHash, carrying the compression
+		// ParseUpstreamURL resolved — which is what makes the advertised URL, the
+		// nar_file row storeInDatabase derives from it, and the stored encoding
+		// agree. The original path is persisted (upstreamNarPath) so the NAR can
 		// still be re-fetched from upstream after the local copy is evicted.
 		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression}
 		narInfo.URL = rewrittenURL.String()

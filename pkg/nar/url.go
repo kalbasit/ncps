@@ -20,11 +20,14 @@ type URL struct {
 	Query           url.Values
 	TransparentZstd bool
 
-	// opaquePath holds the original upstream path (e.g. "nar/<uuid>.nar.zst")
-	// when the narinfo URL is not hash-named and therefore cannot be
-	// reconstructed from Hash. It is used exclusively for the upstream GET;
-	// the Hash field still drives ncps's local storage key. It is empty for
-	// conventional hash-named URLs. See ParseUpstreamURL.
+	// opaquePath holds the original upstream path whenever it cannot be
+	// reconstructed from Hash and Compression. That covers a URL that is not
+	// hash-named (e.g. "nar/<uuid>.nar.zst") and a hash-named URL whose
+	// compression was resolved from the narinfo's Compression: header rather than
+	// from a file extension (e.g. "nar/<hash>.nar" declared zstd, which ncps
+	// re-serves as "nar/<hash>.nar.zst"). It is used exclusively for the upstream
+	// GET; the Hash and Compression fields still drive ncps's local storage key.
+	// It is empty when the upstream path is reconstructible. See ParseUpstreamURL.
 	opaquePath string
 }
 
@@ -51,17 +54,39 @@ func ParseURL(u string) (URL, error) {
 }
 
 // ParseUpstreamURL parses a nar URL taken from an upstream narinfo. For
-// conventional hash-named URLs it is identical to ParseURL. For opaque URLs —
-// where the filename before ".nar" is not a valid Nix hash, as served by
-// cachix (e.g. "nar/<uuidv4>.nar.zst") — it preserves the original path for the
-// upstream GET and uses fallbackHash (the narinfo's NarHash) as ncps's internal
-// storage key. fallbackHash must be a valid hash; otherwise ErrInvalidHash is
-// returned.
+// conventional hash-named URLs it is identical to ParseURL, except for the
+// compression resolution described below. For opaque URLs — where the filename
+// before ".nar" is not a valid Nix hash, as served by cachix (e.g.
+// "nar/<uuidv4>.nar.zst") — it preserves the original path for the upstream GET
+// and uses fallbackHash (the narinfo's NarHash) as ncps's internal storage key.
+// fallbackHash must be a valid hash; otherwise ErrInvalidHash is returned.
 //
 // The Nix binary-cache protocol treats the narinfo URL field as an opaque path
 // relative to the cache root, so a pull-through proxy must tolerate non
 // hash-named URLs rather than reject them.
-func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
+//
+// declaredCompression is the narinfo's own "Compression:" field. It resolves the
+// compression only when the URL carries no compression extension: some upstreams
+// state compression exclusively in that header (Attic emits
+// "nar/<storePathHash>.nar" with "Compression: zstd"), and deriving "none" from
+// the missing extension desyncs the narinfo from the NAR ncps stores and serves
+// (issue #1470). An explicit extension on the URL stays authoritative, so
+// upstreams that encode compression in the URL are unaffected; an unrecognised
+// declaredCompression is ignored.
+func ParseUpstreamURL(u, fallbackHash, declaredCompression string) (URL, error) {
+	// resolveCompression applies declaredCompression when the URL said nothing.
+	resolveCompression := func(fromURL CompressionType) CompressionType {
+		if fromURL != CompressionTypeNone {
+			return fromURL
+		}
+
+		if declared, ok := compressionFromDeclared(declaredCompression); ok {
+			return declared
+		}
+
+		return fromURL
+	}
+
 	pathPart, hash, ct, query, err := parseURLParts(u)
 	if err != nil {
 		// Recover ".nar"-less opaque upstream URLs (e.g. snix-castore's
@@ -69,7 +94,8 @@ func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
 		// treats the narinfo URL as an opaque path relative to the cache root, so
 		// a pull-through proxy must tolerate paths without a ".nar" token rather
 		// than reject them. Such URLs carry no compression extension and are
-		// served uncompressed, so compression is none; the storage key comes from
+		// served uncompressed, so compression comes from the narinfo's declared
+		// Compression (such upstreams advertise none); the storage key comes from
 		// the narinfo NarHash. Only genuine cache-relative paths are recovered —
 		// not bare tokens like "helloworld".
 		if op, oq, ok := parseOpaqueNoNarURL(u); errors.Is(err, ErrInvalidURL) && ok {
@@ -79,7 +105,7 @@ func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
 
 			return URL{
 				Hash:        fallbackHash,
-				Compression: CompressionTypeNone,
+				Compression: resolveCompression(CompressionTypeNone),
 				Query:       oq,
 				opaquePath:  op,
 			}, nil
@@ -88,12 +114,27 @@ func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
 		return URL{}, err
 	}
 
-	// Fast path: a conventional hash-named URL behaves exactly like ParseURL.
+	// Fast path: a conventional hash-named URL behaves exactly like ParseURL,
+	// apart from the declared-compression resolution.
 	if ValidateHash(hash) == nil {
+		resolved := resolveCompression(ct)
+
+		// When the compression came from the narinfo rather than from the URL, the
+		// upstream path can no longer be rebuilt from Hash+Compression: ncps would
+		// request "nar/<hash>.nar.zst" while the upstream serves the extension-less
+		// "nar/<hash>.nar". Preserve the original path for the upstream GET using
+		// the same mechanism opaque URLs use, so ncps's own hash-named URL still
+		// drives local storage and serving.
+		var op string
+		if resolved != ct {
+			op = pathPart
+		}
+
 		return URL{
 			Hash:        hash,
-			Compression: ct,
+			Compression: resolved,
 			Query:       query,
+			opaquePath:  op,
 		}, nil
 	}
 
@@ -104,10 +145,30 @@ func ParseUpstreamURL(u, fallbackHash string) (URL, error) {
 
 	return URL{
 		Hash:        fallbackHash,
-		Compression: ct,
+		Compression: resolveCompression(ct),
 		Query:       query,
 		opaquePath:  pathPart,
 	}, nil
+}
+
+// compressionFromDeclared maps a narinfo "Compression:" field value onto a
+// CompressionType, reporting ok=false for anything ncps does not recognise.
+// Unrecognised values are ignored rather than trusted: CompressionType is a bare
+// string type, so an unknown value would otherwise flow into ToFileExtension,
+// which panics on types it does not know.
+func compressionFromDeclared(declared string) (CompressionType, bool) {
+	switch ct := CompressionType(declared); ct {
+	case CompressionTypeNone,
+		CompressionTypeBzip2,
+		CompressionTypeZstd,
+		CompressionTypeLzip,
+		CompressionTypeLz4,
+		CompressionTypeBr,
+		CompressionTypeXz:
+		return ct, true
+	default:
+		return CompressionTypeNone, false
+	}
 }
 
 // parseURLParts splits a nar URL into its path, hash, compression and query
