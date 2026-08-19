@@ -186,6 +186,12 @@ long-standing behaviour there is unchanged by this requirement, and the header
 is left as the upstream sent it. The same applies to a declared compression ncps
 does not recognise, which is ignored rather than trusted.
 
+Preservation of the original upstream path is byte-exact. A query string on that
+path is preserved *semantically* rather than byte-for-byte: it is parsed and
+re-encoded canonically, so key order and percent-escape casing may differ from
+what the upstream sent. An upstream requiring a byte-exact query — e.g. one
+carrying a signature computed over the raw string — is therefore not supported.
+
 This closes the narinfo↔nar_file compression desync produced by upstreams that
 state compression only in the header — notably Attic, whose `URL:` is always a
 bare `nar/<storePathHash>.nar` while `Compression:` is `zstd`.
@@ -224,5 +230,6 @@ bare `nar/<storePathHash>.nar` while `Compression:` is `zstd`.
 #### Scenario: The original upstream path survives the resolution
 
 - **WHEN** the compression was resolved from the narinfo header rather than from a URL extension
-- **THEN** the upstream GET SHALL target the original extension-less upstream path verbatim, not ncps's re-serve URL
+- **THEN** the upstream GET SHALL target the original extension-less upstream path, not ncps's re-serve URL
+- **AND** any query string on that path SHALL be carried onto the GET
 - **AND** that path SHALL be persisted so the NAR can be re-fetched from upstream after the local copy is evicted
