@@ -135,6 +135,21 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Upstream narinfos that declare their compression only in the `Compression:`
+  header are no longer desynced from the NAR ncps stores.** ncps derived a NAR's
+  compression exclusively from the file extension on the narinfo `URL:` field.
+  Attic states compression only in the header — its URL is always a bare
+  `nar/<storePathHash>.nar` — so ncps read `none`, linked a `Compression: zstd`
+  narinfo to a `compression=none` `nar_file` row, re-compressed the
+  already-compressed NAR a second time on disk, and advertised a URL whose bytes
+  did not match the `Compression:` it re-signed. The narinfo header is now
+  authoritative whenever the URL carries no compression extension (an explicit
+  extension still wins, so cache.nixos.org, cachix, Harmonia and nix-serve are
+  unaffected), and the original upstream path is preserved for the upstream `GET`
+  so the NAR is still fetched from where the upstream actually serves it. Note
+  that an upstream applying zstd at the *transport* level (`Content-Encoding`)
+  over an uncompressed body is a separate, still-open case. (#1470)
+
 - **snix-castore (and other `.nar`-less opaque) upstream narinfo URLs are now
   proxied instead of returning `HTTP 500 "invalid nar URL"`.** Upstreams such as
   `cache.snix.dev` serve narinfos whose `URL:` field is a content-addressed
