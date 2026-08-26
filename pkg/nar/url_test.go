@@ -3,6 +3,7 @@ package nar_test
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -142,7 +143,7 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		const u = "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar.xz"
 
-		got, err := nar.ParseUpstreamURL(u, fallback)
+		got, err := nar.ParseUpstreamURL(u, fallback, "")
 		require.NoError(t, err)
 
 		want, err := nar.ParseURL(u)
@@ -158,7 +159,7 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		const u = "nar/d0c36585-67ac-4e1e-8747-3af0cbc09b90.nar.zst"
 
-		got, err := nar.ParseUpstreamURL(u, fallback)
+		got, err := nar.ParseUpstreamURL(u, fallback, "")
 		require.NoError(t, err)
 
 		// Storage key comes from the fallback (NarHash), not the URL.
@@ -190,7 +191,7 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
 
-		got, err := nar.ParseUpstreamURL(u, fallback)
+		got, err := nar.ParseUpstreamURL(u, fallback, "")
 		require.NoError(t, err)
 
 		// Storage key comes from the fallback (NarHash), not the URL.
@@ -222,7 +223,7 @@ func TestParseUpstreamURL(t *testing.T) {
 	t.Run("opaque URL with an invalid fallback hash errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := nar.ParseUpstreamURL("nar/d0c36585-67ac-4e1e-8747-3af0cbc09b90.nar.zst", "not-a-hash")
+		_, err := nar.ParseUpstreamURL("nar/d0c36585-67ac-4e1e-8747-3af0cbc09b90.nar.zst", "not-a-hash", "")
 		assert.ErrorIs(t, err, nar.ErrInvalidHash)
 	})
 
@@ -231,7 +232,7 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
 
-		_, err := nar.ParseUpstreamURL(u, "not-a-hash")
+		_, err := nar.ParseUpstreamURL(u, "not-a-hash", "")
 		assert.ErrorIs(t, err, nar.ErrInvalidHash)
 	})
 
@@ -247,7 +248,7 @@ func TestParseUpstreamURL(t *testing.T) {
 	t.Run("structurally invalid URL errors even with a valid fallback", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := nar.ParseUpstreamURL("helloworld", fallback)
+		_, err := nar.ParseUpstreamURL("helloworld", fallback, "")
 		assert.ErrorIs(t, err, nar.ErrInvalidURL)
 	})
 
@@ -256,7 +257,7 @@ func TestParseUpstreamURL(t *testing.T) {
 
 		const u = "nar/snix-castore/CiUSIATh-lHQ2Dp92sJJfOGg0-s8mLizwHc0z3OtQ953fwSUGNoC?narsize=7415800"
 
-		got, err := nar.ParseUpstreamURL(u, fallback)
+		got, err := nar.ParseUpstreamURL(u, fallback, "")
 		require.NoError(t, err)
 
 		// The persisted opaque reference retains the query string.
@@ -562,4 +563,172 @@ func TestString(t *testing.T) {
 			assert.Equal(t, test.string, test.narURL.String())
 		})
 	}
+}
+
+// TestParseUpstreamURLCompressionResolution covers issue #1470: an upstream
+// narinfo may state its compression ONLY in the `Compression:` header, with a
+// URL that carries no compression extension (Attic emits `nar/<storePathHash>.nar`
+// with `Compression: zstd`). The URL extension is authoritative when present;
+// when absent the declared compression is.
+func TestParseUpstreamURLCompressionResolution(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fallback = "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps"
+		narHash  = "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac"
+		// Attic addresses NARs by the 32-char store path hash, which is not a
+		// valid nar hash, so its URLs take the opaque branch.
+		storePathHash = "0123456789abcdfghijklmnpqrsvwxyz"
+	)
+
+	for _, tt := range []struct {
+		name     string
+		url      string
+		declared string
+		want     nar.CompressionType
+		opaque   bool
+	}{
+		{
+			name:     "opaque bare .nar with declared zstd resolves to zstd",
+			url:      "nar/" + storePathHash + ".nar",
+			declared: "zstd",
+			want:     nar.CompressionTypeZstd,
+			opaque:   true,
+		},
+		{
+			name:     "hash-named bare .nar with declared zstd resolves to zstd",
+			url:      "nar/" + narHash + ".nar",
+			declared: "zstd",
+			want:     nar.CompressionTypeZstd,
+			opaque:   true,
+		},
+		{
+			name:     "hash-named bare .nar with declared xz resolves to xz",
+			url:      "nar/" + narHash + ".nar",
+			declared: "xz",
+			want:     nar.CompressionTypeXz,
+			opaque:   true,
+		},
+		{
+			name:     "declared none stays none",
+			url:      "nar/" + narHash + ".nar",
+			declared: "none",
+			want:     nar.CompressionTypeNone,
+			opaque:   false,
+		},
+		{
+			name:     "absent declaration stays none",
+			url:      "nar/" + narHash + ".nar",
+			declared: "",
+			want:     nar.CompressionTypeNone,
+			opaque:   false,
+		},
+		{
+			name:     "unrecognized declaration is ignored rather than trusted",
+			url:      "nar/" + narHash + ".nar",
+			declared: "not-a-real-compression",
+			want:     nar.CompressionTypeNone,
+			opaque:   false,
+		},
+		{
+			name:     "explicit URL extension wins over a conflicting declaration",
+			url:      "nar/" + narHash + ".nar.xz",
+			declared: "zstd",
+			want:     nar.CompressionTypeXz,
+			opaque:   false,
+		},
+		{
+			name:     "opaque URL with an explicit extension keeps it",
+			url:      "nar/d0c36585-67ac-4e1e-8747-3af0cbc09b90.nar.zst",
+			declared: "xz",
+			want:     nar.CompressionTypeZstd,
+			opaque:   true,
+		},
+		{
+			name:     "snix-castore .nar-less opaque URL with declared none stays none",
+			url:      "nar/snix-castore/Zm9vYmFy?narsize=7415800",
+			declared: "none",
+			want:     nar.CompressionTypeNone,
+			opaque:   true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := nar.ParseUpstreamURL(tt.url, fallback, tt.declared)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, got.Compression)
+
+			// IsOpaque marks "the upstream path cannot be rebuilt from
+			// Hash+Compression", which is true both for a non-hash-named URL and
+			// for a hash-named one whose compression came from the narinfo: ncps
+			// re-serves the latter as <hash>.nar.<ext> while the upstream still
+			// serves the extension-less path.
+			assert.Equal(t, tt.opaque, got.IsOpaque())
+
+			if tt.opaque {
+				assert.Equal(t, strings.Split(tt.url, "?")[0], got.OpaquePath(),
+					"the original upstream path must be preserved verbatim for the upstream GET")
+			}
+		})
+	}
+}
+
+// TestParseUpstreamURLDeclaredCompressionNeverPanics guards the ToFileExtension
+// panic path: an unrecognized `Compression:` value must never reach a
+// CompressionType that ToFileExtension does not know.
+func TestParseUpstreamURLDeclaredCompressionNeverPanics(t *testing.T) {
+	t.Parallel()
+
+	const fallback = "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps"
+
+	for _, declared := range []string{"lzma", "gzip", "LZ4", "  ", "zstd "} {
+		t.Run(declared, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := nar.ParseUpstreamURL("nar/"+fallback+".nar", fallback, declared)
+			require.NoError(t, err)
+
+			assert.NotPanics(t, func() { _ = got.String() })
+			assert.NotPanics(t, func() { _, _ = got.ToFilePath() })
+		})
+	}
+}
+
+// TestParseURLIgnoresDeclaredCompression pins that the strict parser used for
+// ncps's own serve/storage keys is untouched by the upstream-side resolution.
+func TestParseURLIgnoresDeclaredCompression(t *testing.T) {
+	t.Parallel()
+
+	const narHash = "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac"
+
+	got, err := nar.ParseURL("nar/" + narHash + ".nar")
+	require.NoError(t, err)
+
+	assert.Equal(t, nar.CompressionTypeNone, got.Compression,
+		"ParseURL derives compression from the URL alone and takes no narinfo input")
+}
+
+// TestParseUpstreamURLResolvedCompressionKeepsQuery pins that resolving the
+// compression from the narinfo does not disturb the URL's query string: the
+// query must survive on the parsed URL so callers can decide whether it belongs
+// to ncps's serve/storage key (hash-named URLs) or only to the upstream GET
+// (truly opaque ones).
+func TestParseUpstreamURLResolvedCompressionKeepsQuery(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fallback = "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps"
+		narHash  = "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac"
+	)
+
+	got, err := nar.ParseUpstreamURL("nar/"+narHash+".nar?x=y", fallback, "zstd")
+	require.NoError(t, err)
+
+	assert.Equal(t, nar.CompressionTypeZstd, got.Compression)
+	assert.True(t, got.IsOpaque(), "the extension-less upstream path must be preserved")
+	assert.Equal(t, "y", got.Query.Get("x"))
+	assert.Equal(t, "nar/"+narHash+".nar?x=y", got.OpaqueUpstreamRef(),
+		"the upstream GET must target the original path with its query")
 }
