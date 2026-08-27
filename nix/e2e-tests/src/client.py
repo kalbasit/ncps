@@ -14,11 +14,24 @@ import lzma
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 from harness_config import REPO_ROOT, VAR_NCPS
+
+
+@dataclass
+class TimedResponse:
+    """An HTTP response with its time-to-first-byte recorded."""
+
+    status: int
+    headers: Dict[str, str]
+    body: bytes
+    ttfb_seconds: float
+    total_seconds: float
 
 
 class Client:
@@ -33,6 +46,37 @@ class Client:
         url = self.base_url + "/" + path.lstrip("/")
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read()
+
+    def get_timed(self, path: str, timeout: int = 300) -> "TimedResponse":
+        """GET ``path``, measuring time-to-first-byte separately from completion.
+
+        TTFB is the interval from issuing the request to the first *body* byte
+        arriving. That is the number a reverse proxy's read timeout actually
+        governs, and it is the one that mattered in production: every NAR in the
+        failing runs was byte-perfect but took ~57s to its first byte, so the
+        ingress aborted the response mid-body and the client saw a truncated 200.
+        Asserting only on bytes cannot see that; asserting on total duration
+        conflates a slow start with a large payload.
+        """
+        url = self.base_url + "/" + path.lstrip("/")
+        started = time.monotonic()
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            first = r.read(1)
+            ttfb = time.monotonic() - started
+            chunks = [first]
+            while True:
+                block = r.read(1 << 20)
+                if not block:
+                    break
+                chunks.append(block)
+            body = b"".join(chunks)
+            return TimedResponse(
+                status=r.status,
+                headers=dict(r.headers),
+                body=body,
+                ttfb_seconds=ttfb,
+                total_seconds=time.monotonic() - started,
+            )
 
     def head(self, path: str, timeout: int = 30) -> Tuple[int, Dict[str, str]]:
         url = self.base_url + "/" + path.lstrip("/")

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
@@ -27,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 
 	entchunk "github.com/kalbasit/ncps/ent/chunk"
 	entconfigentry "github.com/kalbasit/ncps/ent/configentry"
@@ -175,6 +177,13 @@ var (
 	// reconstructed from chunks do not match the recorded NarHash or size.
 	ErrNarHashMismatch = errors.New("reconstructed nar does not match recorded hash or size")
 
+	// ErrStatTimeout indicates a storage presence probe did not answer within the
+	// configured bound, so presence could not be determined. It is deliberately
+	// NOT a "not found": callers MUST treat it as undeterminable and MUST NOT
+	// convert it into a 404 or a confirmed absence. See storage.NarStore.StatNar
+	// for the (false, err) contract this participates in.
+	ErrStatTimeout = errors.New("storage presence probe timed out; presence undetermined")
+
 	// ErrMissingChunk is returned by MigrateChunksToNar when one or more chunks
 	// referenced by the nar_file are absent from the chunk store or the DB. The
 	// NAR cannot be reconstructed and should be purged so it can be re-fetched.
@@ -249,6 +258,17 @@ var (
 	// Download coordination metrics
 	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
 	downloadCoordinationFallbackTotal metric.Int64Counter
+
+	// Storage presence-probe metrics. The duration histogram covers every probe,
+	// so slow-but-successful storage is visible before it degrades into timeouts.
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
+	storageStatDuration metric.Float64Histogram
+
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
+	storageStatTimeoutTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
+	storageStatInFlight metric.Int64UpDownCounter
 )
 
 //nolint:gochecknoinits
@@ -426,6 +446,39 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	storageStatDuration, err = meter.Float64Histogram(
+		"ncps_storage_stat_duration_seconds",
+		metric.WithDescription("Duration of storage presence probes on the NAR read path"),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	storageStatTimeoutTotal, err = meter.Int64Counter(
+		"ncps_storage_stat_timeout_total",
+		metric.WithDescription(
+			"Counts storage presence probes abandoned without a determination, by reason "+
+				"(deadline, capacity).",
+		),
+		metric.WithUnit("{event}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	storageStatInFlight, err = meter.Int64UpDownCounter(
+		"ncps_storage_stat_in_flight",
+		metric.WithDescription(
+			"Storage presence probes currently running, including those already abandoned "+
+				"by their request and still blocked in the backend.",
+		),
+		metric.WithUnit("{probe}"),
+	)
+	if err != nil {
+		panic(err)
+	}
 }
 
 // PrimeMetrics records a zero-valued measurement on every counter instrument in
@@ -449,6 +502,7 @@ func PrimeMetrics(ctx context.Context) {
 		lruBytesFreedTotal,
 		backgroundMigrationObjectsTotal,
 		downloadCoordinationFallbackTotal,
+		storageStatTimeoutTotal,
 	}
 
 	for _, c := range counters {
@@ -533,6 +587,22 @@ type Cache struct {
 	// failed. Defaults to defaultChunkWaitTimeout; operators on high-latency
 	// storage can raise or lower it (and align it with their gateway timeout).
 	chunkWaitTimeout time.Duration
+
+	// statTimeout bounds how long the NAR read path waits on a storage presence
+	// probe before treating the result as undeterminable. Protected by statMu.
+	// Defaults to defaultStatTimeout; a non-positive value disables the bound and
+	// restores unbounded waiting.
+	statMu      sync.RWMutex
+	statTimeout time.Duration
+
+	// inFlightStatProbes counts presence probes currently running, including any
+	// a request has already abandoned. Bounded by maxInFlightStatProbes.
+	inFlightStatProbes atomic.Int64
+
+	// statProbeGroup collapses concurrent presence probes for the same object into
+	// a single backend call, so a stalled NAR under a retry storm costs one blocked
+	// goroutine rather than one per client.
+	statProbeGroup singleflight.Group
 
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
 	// upstream cache so incoming requests for the same nar can find and wait
@@ -753,6 +823,7 @@ func New(
 		downloadPollTimeout:  downloadPollTimeout,
 		cacheLockTTL:         cacheLockTTL,
 		chunkWaitTimeout:     defaultChunkWaitTimeout,
+		statTimeout:          defaultStatTimeout,
 		upstreamJobs:         make(map[string]*downloadState),
 		upstreamCaches:       make([]*upstream.Cache, 0),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
@@ -1291,6 +1362,17 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		reader io.ReadCloser
 	)
 
+	// Open one cumulative probe budget for this request. Every presence probe below
+	// spends from it, so a request cannot accumulate several full probe timeouts.
+	ctx = withStatBudget(ctx, c.getStatTimeout())
+
+	// presenceUndetermined records that the storage probe timed out rather than
+	// answering. It is NOT a cache miss: the NAR may well be present. The request
+	// still proceeds down the upstream-recovery path so the client gets correct
+	// bytes, but the distinction has to survive to the end of the call — see the
+	// not-found conversion after withReadLock returns.
+	var presenceUndetermined bool
+
 	err := c.withReadLock(ctx, "GetNar", narJobKey(narURL.Hash), func() error {
 		ctx = narURL.
 			NewLogger(*zerolog.Ctx(ctx)).
@@ -1320,7 +1402,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		// repeat the HasNarInStore stat and nar_file lookup already done here.
 		hasNar, finished, err := c.narServability(ctx, narURL)
 		if err != nil {
-			return err
+			if !errors.Is(err, ErrStatTimeout) {
+				return err
+			}
+
+			presenceUndetermined = true
+			hasNar, finished = false, false
 		}
 
 		// When a local download job is already active, prefer the faster temp-file
@@ -1368,6 +1455,16 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		// If so, we return ErrNotFound immediately to let the client know we don't have it locally,
 		// triggering the PUT (push) operation.
 		if IsUploadOnly(ctx) {
+			// A stalled probe is not a miss. Returning ErrNotFound here would tell the
+			// client "we do not have it, please PUT it"; if the NAR is in fact present
+			// the client skips the upload and leaves a phantom whose later reference
+			// check 404s. Surface a retryable error instead so the client retries.
+			if presenceUndetermined {
+				metricAttrs = append(metricAttrs, attribute.String("result", "undetermined"))
+
+				return fmt.Errorf("cannot confirm nar absence for upload: %w", ErrStatTimeout)
+			}
+
 			metricAttrs = append(metricAttrs, attribute.String("result", "miss"))
 
 			return storage.ErrNotFound
@@ -1696,6 +1793,19 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 		return nil
 	})
+
+	// Never report "not found" off the back of a probe we never got an answer from.
+	// Presence was undetermined and upstream recovery could not produce the NAR
+	// either, so absence was never established — the NAR may be sitting in the store
+	// behind a stalled stat. The server maps storage.ErrNotFound to 404, and a 404
+	// here would tell a client to stop looking (and, for `nix copy`, to skip the
+	// upload and leave a phantom). Surface the undetermined error so the client
+	// retries instead.
+	if err != nil && presenceUndetermined &&
+		(errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound)) {
+		err = fmt.Errorf("cannot confirm nar absence: %w", ErrStatTimeout)
+	}
+
 	if err != nil {
 		return narURL, 0, nil, err
 	}
@@ -4802,7 +4912,27 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 // by a failed download) is a cache miss that must trigger an upstream (re-)download,
 // never a terminal 404.
 func (c *Cache) narServability(ctx context.Context, narURL nar.URL) (servable, finished bool, err error) {
-	if c.HasNarInStore(ctx, narURL) {
+	// Use statNarInStore, not HasNarInStore: the latter collapses an undeterminable
+	// probe into "absent", which would let a *stalled* storage probe masquerade as a
+	// confirmed cache miss. Callers distinguish the two — see GetNar's handling of
+	// ErrStatTimeout, which must never become a 404.
+	present, statErr := c.statNarInStore(ctx, narURL)
+	if statErr != nil {
+		// Only a timed-out probe is genuinely undeterminable and must be surfaced:
+		// HasNarInStore would collapse it into "absent", letting a stalled probe
+		// masquerade as a confirmed cache miss (and, in upload-only mode, as a 404
+		// that creates a phantom NAR). Every other stat error keeps its historical
+		// treatment — fall through as not-in-store — because those are deterministic
+		// answers (e.g. a malformed nar URL that can never name a stored object)
+		// rather than storage ambiguity. Revisiting them is out of scope here.
+		if errors.Is(statErr, ErrStatTimeout) {
+			return false, false, fmt.Errorf("could not determine nar presence in store: %w", statErr)
+		}
+
+		present = false
+	}
+
+	if present {
 		return true, true, nil
 	}
 
@@ -4940,7 +5070,7 @@ func (c *Cache) statNarInStore(ctx context.Context, narURL nar.URL) (bool, error
 			candURL := narURL
 			candURL.Compression = comp
 
-			present, err := c.narStore.StatNar(ctx, candURL)
+			present, err := c.boundedStatNar(ctx, candURL)
 			if err != nil {
 				return false, err
 			}
@@ -4951,7 +5081,201 @@ func (c *Cache) statNarInStore(ctx context.Context, narURL nar.URL) (bool, error
 		}
 	}
 
-	return c.narStore.StatNar(ctx, narURL)
+	return c.boundedStatNar(ctx, narURL)
+}
+
+// maxInFlightStatProbes caps how many storage presence probes may be running at
+// once, counting those a request has already abandoned and which are still
+// blocked inside the backend.
+//
+// A healthy probe returns in milliseconds (8-300ms observed on both backends), so
+// under normal load this count stays near zero no matter how many NAR requests are
+// in flight — only *stalled* probes accumulate. The cap therefore bounds the cost
+// of a storage brown-out without constraining healthy concurrency. It matters
+// because a probe abandoned on the local backend is blocked in an uncancellable
+// fstatat(2), pinning an OS thread until the kernel returns.
+const maxInFlightStatProbes = 256
+
+// statBudgetKey carries a per-request deadline for the CUMULATIVE time spent on
+// storage presence probes.
+type statBudgetKey struct{}
+
+// withStatBudget starts a per-request probe budget if one is not already running.
+//
+// Bounding each probe individually is not enough: a single GetNar consults the
+// store several times (the pre-check, the servability lookup, and again after
+// coordination), so N stalled probes cost N x statTimeout. Measured at 4x the
+// configured bound before this budget existed, which at a 15s setting would put a
+// request back over a 60s proxy timeout — the very failure this change fixes.
+//
+// The budget is deliberately scoped to probes only. It must not bound the download
+// itself: a large NAR legitimately takes far longer than any probe should.
+func withStatBudget(ctx context.Context, d time.Duration) context.Context {
+	if d <= 0 {
+		return ctx
+	}
+
+	if _, ok := ctx.Value(statBudgetKey{}).(time.Time); ok {
+		return ctx
+	}
+
+	return context.WithValue(ctx, statBudgetKey{}, time.Now().Add(d))
+}
+
+// statBudgetRemaining returns how much of the request's probe budget is left,
+// clamped to fallback. Without a budget on the context it returns fallback, so a
+// caller outside the NAR read path keeps the plain per-probe bound.
+func statBudgetRemaining(ctx context.Context, fallback time.Duration) time.Duration {
+	deadline, ok := ctx.Value(statBudgetKey{}).(time.Time)
+	if !ok {
+		return fallback
+	}
+
+	remaining := time.Until(deadline)
+	if remaining > fallback {
+		return fallback
+	}
+
+	return remaining
+}
+
+// statProbeResult carries a presence probe's outcome back from its goroutine.
+type statProbeResult struct {
+	present bool
+	err     error
+}
+
+// boundedStatNar runs a storage presence probe under the configured bound.
+//
+// The probe runs on its own goroutine because it cannot be relied upon to observe
+// context cancellation: the local backend's StatNar bottoms out in os.Stat ->
+// fstatat(2), which takes no context and cannot be aborted from userspace. On a
+// hard NFS mount a single such call was measured blocking ~57s, long enough for a
+// reverse proxy to abort the response mid-body and hand the client a 200 with a
+// truncated body. A deadline therefore cannot *cancel* the local probe; it can
+// only stop the request from *waiting* on it.
+//
+// The deadline is still propagated into the context handed to the backend, so a
+// context-aware backend (S3) genuinely cancels its request rather than merely
+// being abandoned.
+//
+// A bound that expires yields ErrStatTimeout — undeterminable, never a confirmed
+// absence. See the storage.NarStore.StatNar contract.
+func (c *Cache) boundedStatNar(ctx context.Context, narURL nar.URL) (bool, error) {
+	configured := c.getStatTimeout()
+	if configured <= 0 {
+		// The bound is disabled: preserve the historical unbounded behaviour.
+		return c.narStore.StatNar(ctx, narURL)
+	}
+
+	// Spend from the request's cumulative probe budget, not a fresh per-probe one,
+	// so several stalled probes in one request cannot sum past the bound.
+	timeout := statBudgetRemaining(ctx, configured)
+	if timeout <= 0 {
+		storageStatTimeoutTotal.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("reason", "budget_exhausted")))
+
+		return false, fmt.Errorf("%w: request probe budget exhausted", ErrStatTimeout)
+	}
+
+	// Collapse concurrent probes for the same object onto one backend call. The
+	// shared call is deliberately detached from any single caller's context: one
+	// request walking away must not cancel a probe the others are still waiting on.
+	// It stays bounded by its own deadline, which is what a context-aware backend
+	// (S3) uses to cancel for real.
+	resCh := c.statProbeGroup.DoChan(narURL.String(), func() (any, error) {
+		if !c.acquireStatProbeSlot() {
+			return nil, fmt.Errorf("%w: %d probes already in flight",
+				ErrStatTimeout, maxInFlightStatProbes)
+		}
+		defer c.releaseStatProbeSlot()
+
+		probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer cancel()
+
+		probeStart := time.Now()
+
+		present, err := c.narStore.StatNar(probeCtx, narURL)
+
+		storageStatDuration.Record(probeCtx, time.Since(probeStart).Seconds())
+
+		return statProbeResult{present: present, err: err}, nil
+	})
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	start := time.Now()
+
+	select {
+	case shared := <-resCh:
+		if shared.Err != nil {
+			if errors.Is(shared.Err, ErrStatTimeout) {
+				storageStatTimeoutTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("reason", "capacity")))
+
+				zerolog.Ctx(ctx).Warn().
+					Str("nar_url", narURL.String()).
+					Int("in_flight", maxInFlightStatProbes).
+					Msg("storage presence probes saturated; reporting presence as undetermined")
+			}
+
+			return false, shared.Err
+		}
+
+		res, ok := shared.Val.(statProbeResult)
+		if !ok {
+			return false, fmt.Errorf("%w: unexpected probe result type", ErrStatTimeout)
+		}
+
+		return res.present, res.err
+	case <-ctx.Done():
+		// The caller went away: report that rather than a probe timeout.
+		return false, ctx.Err()
+	case <-timer.C:
+		elapsed := time.Since(start)
+
+		storageStatTimeoutTotal.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("reason", "deadline")))
+
+		trace.SpanFromContext(ctx).AddEvent("storage.stat.timeout", trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.Float64("elapsed_seconds", elapsed.Seconds()),
+		))
+
+		zerolog.Ctx(ctx).Warn().
+			Str("nar_url", narURL.String()).
+			Dur("elapsed", elapsed).
+			Dur("timeout", timeout).
+			Msg("storage presence probe timed out; presence undetermined")
+
+		return false, fmt.Errorf("%w after %s", ErrStatTimeout, elapsed)
+	}
+}
+
+// acquireStatProbeSlot reserves one of the maxInFlightStatProbes slots, returning
+// false when they are exhausted so the caller fails fast instead of parking
+// another goroutine (and, on the local backend, another OS thread).
+func (c *Cache) acquireStatProbeSlot() bool {
+	for {
+		cur := c.inFlightStatProbes.Load()
+		if cur >= maxInFlightStatProbes {
+			return false
+		}
+
+		if c.inFlightStatProbes.CompareAndSwap(cur, cur+1) {
+			storageStatInFlight.Add(context.Background(), 1)
+
+			return true
+		}
+	}
+}
+
+// releaseStatProbeSlot returns a slot once the backend finally answers, however
+// long after the request gave up waiting for it.
+func (c *Cache) releaseStatProbeSlot() {
+	c.inFlightStatProbes.Add(-1)
+	storageStatInFlight.Add(context.Background(), -1)
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
@@ -8957,6 +9281,33 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 // It is intentionally below common reverse-proxy gateway timeouts so a stalled
 // chunk surfaces as a retryable error rather than a gateway 504.
 const defaultChunkWaitTimeout = 30 * time.Second
+
+// defaultStatTimeout is the default bound on how long the NAR read path waits on
+// a storage presence probe before treating the result as undeterminable.
+//
+// It sits an order of magnitude above a healthy probe (8-300ms observed against
+// both the local and S3 backends) and an order of magnitude below the 60s read
+// timeout of a typical reverse proxy, so it fires only on genuine pathology —
+// while still resolving the request long before an intermediary would abort it
+// mid-body and hand the client a truncated success.
+const defaultStatTimeout = 5 * time.Second
+
+// SetStatTimeout overrides the bound on storage presence probes used by the NAR
+// read path. A non-positive value disables the bound, restoring unbounded waiting
+// (the pre-change behaviour, kept as a rollback escape hatch).
+func (c *Cache) SetStatTimeout(d time.Duration) {
+	c.statMu.Lock()
+	c.statTimeout = d
+	c.statMu.Unlock()
+}
+
+// getStatTimeout returns the currently configured presence-probe bound.
+func (c *Cache) getStatTimeout() time.Duration {
+	c.statMu.RLock()
+	defer c.statMu.RUnlock()
+
+	return c.statTimeout
+}
 
 // SetChunkWaitTimeout overrides the per-chunk wait bound used by progressive CDC
 // streaming. A non-positive value resets it to defaultChunkWaitTimeout. Operators
