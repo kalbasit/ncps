@@ -1,0 +1,701 @@
+goroutine 452 [running]:
+runtime/pprof.writeGoroutineStacks({0x20e36c0, 0x2774c0721e0})
+	runtime/pprof/pprof.go:819 +0x6b
+runtime/pprof.writeGoroutine({0x20e36c0?, 0x2774c0721e0?}, 0x2774c40d748?)
+	runtime/pprof/pprof.go:782 +0x25
+runtime/pprof.(*Profile).WriteTo(0x32591b0?, {0x20e36c0?, 0x2774c0721e0?}, 0xc?)
+	runtime/pprof/pprof.go:408 +0x149
+net/http/pprof.handler.ServeHTTP({0x2774c4860d1, 0x9}, {0x20f3700, 0x2774c0721e0}, 0x2774ba5c140)
+	net/http/pprof/pprof.go:273 +0x52a
+net/http/pprof.Index({0x20f3700, 0x2774c0721e0}, 0x2774ba5c140?)
+	net/http/pprof/pprof.go:397 +0xda
+net/http.HandlerFunc.ServeHTTP(0x2774b8f89c0?, {0x20f3700?, 0x2774c0721e0?}, 0xd465b6?)
+	net/http/server.go:2284 +0x29
+net/http.(*ServeMux).ServeHTTP(0x48e2f9?, {0x20f3700, 0x2774c0721e0}, 0x2774ba5c140)
+	net/http/server.go:2826 +0x1c7
+net/http.serverHandler.ServeHTTP({0x2774bdd2000?}, {0x20f3700?, 0x2774c0721e0?}, 0x1?)
+	net/http/server.go:3309 +0x8e
+net/http.(*conn).serve(0x2774bb8a090, {0x20f71f8, 0x2774ba009c0})
+	net/http/server.go:2067 +0x690
+created by net/http.(*Server).Serve in goroutine 155
+	net/http/server.go:3462 +0x485
+
+goroutine 1 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1ba81e400, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774ba38a00?, 0x900000036?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Accept(0x2774ba38a00)
+	internal/poll/fd_unix.go:613 +0x28c
+net.(*netFD).accept(0x2774ba38a00)
+	net/fd_unix.go:150 +0x29
+net.(*TCPListener).accept(0x2774be1b700)
+	net/tcpsock_posix.go:159 +0x1b
+net.(*TCPListener).Accept(0x2774be1b700)
+	net/tcpsock.go:387 +0x30
+net/http.(*Server).Serve(0x2774bc0ef00, {0x20f34e0, 0x2774be1b700})
+	net/http/server.go:3432 +0x30c
+net/http.(*Server).ListenAndServe(0x2774bc0ef00)
+	net/http/server.go:3358 +0x72
+github.com/kalbasit/ncps/pkg/ncps.serveCommand.serveAction.func5({0x20f71f8, 0x2774bb3e0f0}, 0x2774bc24b08)
+	github.com/kalbasit/ncps/pkg/ncps/serve.go:765 +0x11d2
+github.com/urfave/cli/v3.(*Command).run(0x2774bc24b08, {0x20f71f8, 0x2774bb3e0f0}, {0x2774bde6ff0, 0x1, 0x1})
+	github.com/urfave/cli/v3@v3.11.0/command_run.go:382 +0x2d9a
+github.com/urfave/cli/v3.(*Command).run(0x2774bb22dc8, {0x20f71f8, 0x2774bc60ab0}, {0x2774b8d4040, 0x4, 0x4})
+	github.com/urfave/cli/v3@v3.11.0/command_run.go:320 +0x2585
+github.com/urfave/cli/v3.(*Command).Run(0x2774b7841e0?, {0x20f71c0?, 0x33b89a0?}, {0x2774b8d4040?, 0x2774b884780?, 0x2774b880888?})
+	github.com/urfave/cli/v3@v3.11.0/command_run.go:95 +0x25
+main.realMain()
+	github.com/kalbasit/ncps/main.go:23 +0xc5
+main.main()
+	github.com/kalbasit/ncps/main.go:12 +0x13
+
+goroutine 53 [select]:
+github.com/kalbasit/ncps/pkg/maxprocs.AutoMaxProcs({0x20f7230, 0x2774bb18050}, 0x6fc23ac00, {{0x20ebc70, 0x2774bca0360}, 0x0, {0x0, 0x0}, {0x2774bc81000, 0xe, ...}, ...})
+	github.com/kalbasit/ncps/pkg/maxprocs/maxprocs.go:33 +0x57d
+github.com/kalbasit/ncps/pkg/ncps.serveCommand.serveAction.func5.2()
+	github.com/kalbasit/ncps/pkg/ncps/serve.go:563 +0x7b
+golang.org/x/sync/errgroup.(*Group).Go.func1()
+	golang.org/x/sync@v0.22.0/errgroup/errgroup.go:93 +0x50
+created by golang.org/x/sync/errgroup.(*Group).Go in goroutine 1
+	golang.org/x/sync@v0.22.0/errgroup/errgroup.go:78 +0x95
+
+goroutine 55 [select, 1 minutes]:
+database/sql.(*DB).connectionOpener(0x2774b867ba0, {0x20f7230, 0x2774bb18190})
+	database/sql/sql.go:1261 +0x89
+created by database/sql.OpenDB in goroutine 1
+	database/sql/sql.go:841 +0x130
+
+goroutine 261 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e3200, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774b9f2800?, 0x2774b994000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774b9f2800, {0x2774b994000, 0x1500, 0x1500})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774b9f2800, {0x2774b994000?, 0x48f30c?, 0x4a3d1d?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774c412040, {0x2774b994000?, 0x7fb17058a4c0?, 0x7fb1bab05fa0?})
+	net/net.go:196 +0x45
+crypto/tls.(*atLeastReader).Read(0x2774c354318, {0x2774b994000?, 0x2774bda9a48?, 0x4561c8?})
+	crypto/tls/conn.go:815 +0x3b
+bytes.(*Buffer).ReadFrom(0x2774c1a89a8, {0x20e5780, 0x2774c354318})
+	bytes/buffer.go:229 +0x98
+crypto/tls.(*Conn).readFromUntil(0x2774c1a8708, {0x20e2e60, 0x2774c412040}, 0xc8524c?)
+	crypto/tls/conn.go:837 +0xde
+crypto/tls.(*Conn).readRecordOrCCS(0x2774c1a8708, 0x0)
+	crypto/tls/conn.go:626 +0x3db
+crypto/tls.(*Conn).readRecord(...)
+	crypto/tls/conn.go:588
+crypto/tls.(*Conn).Read(0x2774c1a8708, {0x2774c0fb000, 0x1000, 0xd13740?})
+	crypto/tls/conn.go:1393 +0x145
+bufio.(*Reader).Read(0x2774c17a300, {0x2774bdc62e4, 0x9, 0xd3038e?})
+	bufio/bufio.go:245 +0x197
+io.ReadAtLeast({0x20e1840, 0x2774c17a300}, {0x2774bdc62e4, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+net/http.http2readFrameHeader({0x2774bdc62e4, 0x9, 0x27700000005?}, {0x20e1840?, 0x2774c17a300?})
+	net/http/h2_bundle.go:1805 +0x65
+net/http.(*http2Framer).ReadFrameHeader(0x2774bdc62a0)
+	net/http/h2_bundle.go:2071 +0x6b
+net/http.(*http2Framer).ReadFrame(0x2774bdc62a0)
+	net/http/h2_bundle.go:2130 +0x18
+net/http.(*http2clientConnReadLoop).run(0x2774bda9fa8)
+	net/http/h2_bundle.go:9550 +0xca
+net/http.(*http2ClientConn).readLoop(0x2774bfdc1c0)
+	net/http/h2_bundle.go:9419 +0x52
+created by net/http.(*http2Transport).newClientConn in goroutine 260
+	net/http/h2_bundle.go:8171 +0xda5
+
+goroutine 120 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bf828b0, {0x20f7230, 0x2774bc1b680})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 11 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774be16150, {0x20f7230, 0x2774b92c5f0})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 12 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774be16180, {0x20f7230, 0x2774b9ded20})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 13 [select]:
+go.opentelemetry.io/otel/sdk/trace.(*batchSpanProcessor).processQueue(0x2774bd85130)
+	go.opentelemetry.io/otel/sdk@v1.44.0/trace/batch_span_processor.go:327 +0x10f
+go.opentelemetry.io/otel/sdk/trace.NewBatchSpanProcessor.func2()
+	go.opentelemetry.io/otel/sdk@v1.44.0/trace/batch_span_processor.go:127 +0x1c
+sync.(*WaitGroup).Go.func1()
+	sync/waitgroup.go:258 +0x4a
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x73
+
+goroutine 146 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda0440, {0x20f7230, 0x2774bc1a460})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 147 [chan receive]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda0470, {0x20f7230, 0x2774bc1a4b0})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 148 [chan receive]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda04a0, {0x20f7230, 0x2774bc1a9b0})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 149 [select]:
+go.opentelemetry.io/otel/sdk/metric.(*PeriodicReader).run(0x2774b8f8000, {0x20f7230, 0x2774bc1aa00}, 0xdf8475800)
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:199 +0x125
+go.opentelemetry.io/otel/sdk/metric.NewPeriodicReader.func2()
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:137 +0x4f
+created by go.opentelemetry.io/otel/sdk/metric.NewPeriodicReader in goroutine 1
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:135 +0x2cd
+
+goroutine 150 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda0a20, {0x20f7230, 0x2774bc1ad70})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 151 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda0a50, {0x20f7230, 0x2774bc1adc0})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 152 [chan receive, 1 minutes]:
+google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x2774bda0a80, {0x20f7230, 0x2774bc1ae10})
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:88 +0xe5
+created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 1
+	google.golang.org/grpc@v1.82.1/internal/grpcsync/callback_serializer.go:52 +0x11a
+
+goroutine 153 [chan receive]:
+go.opentelemetry.io/otel/sdk/log.exportSync.func1()
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/exporter.go:136 +0x137
+created by go.opentelemetry.io/otel/sdk/log.exportSync in goroutine 1
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/exporter.go:134 +0xd9
+
+goroutine 154 [select]:
+go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).poll.func1()
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/batch.go:147 +0x10b
+created by go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).poll in goroutine 1
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/batch.go:142 +0x14a
+
+goroutine 155 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1ba81ee00, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774bc2a000?, 0x9004287d7?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Accept(0x2774bc2a000)
+	internal/poll/fd_unix.go:613 +0x28c
+net.(*netFD).accept(0x2774bc2a000)
+	net/fd_unix.go:150 +0x29
+net.(*TCPListener).accept(0x2774bd97240)
+	net/tcpsock_posix.go:159 +0x1b
+net.(*TCPListener).Accept(0x2774bd97240)
+	net/tcpsock.go:387 +0x30
+net/http.(*Server).Serve(0x2774b94c700, {0x20f34e0, 0x2774bd97240})
+	net/http/server.go:3432 +0x30c
+net/http.(*Server).ListenAndServe(0x2774b94c700)
+	net/http/server.go:3358 +0x72
+github.com/kalbasit/ncps/pkg/ncps.serveCommand.serveAction.func5.4()
+	github.com/kalbasit/ncps/pkg/ncps/serve.go:667 +0x25
+created by github.com/kalbasit/ncps/pkg/ncps.serveCommand.serveAction.func5 in goroutine 1
+	github.com/kalbasit/ncps/pkg/ncps/serve.go:666 +0xa36
+
+goroutine 156 [chan receive, 1 minutes]:
+go.opentelemetry.io/otel/sdk/log.exportSync.func1()
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/exporter.go:136 +0x137
+created by go.opentelemetry.io/otel/sdk/log.exportSync in goroutine 1
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/exporter.go:134 +0xd9
+
+goroutine 14 [select]:
+go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).poll.func1()
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/batch.go:147 +0x10b
+created by go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).poll in goroutine 1
+	go.opentelemetry.io/otel/sdk/log@v0.20.0/batch.go:142 +0x14a
+
+goroutine 15 [select, 1 minutes]:
+go.opentelemetry.io/otel/sdk/metric.(*PeriodicReader).run(0x2774b8f8240, {0x20f7230, 0x2774bc1aa50}, 0x34630b8a000)
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:199 +0x125
+go.opentelemetry.io/otel/sdk/metric.NewPeriodicReader.func2()
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:137 +0x4f
+created by go.opentelemetry.io/otel/sdk/metric.NewPeriodicReader in goroutine 1
+	go.opentelemetry.io/otel/sdk/metric@v1.44.0/periodic_reader.go:135 +0x2cd
+
+goroutine 162 [select]:
+github.com/kalbasit/ncps/pkg/cache.New.(*HealthChecker).Start.func2()
+	github.com/kalbasit/ncps/pkg/cache/healthcheck/healthcheck.go:84 +0xb5
+github.com/kalbasit/ncps/pkg/analytics.SafeGo.func1()
+	github.com/kalbasit/ncps/pkg/analytics/analytics.go:133 +0x53
+created by github.com/kalbasit/ncps/pkg/analytics.SafeGo in goroutine 1
+	github.com/kalbasit/ncps/pkg/analytics/analytics.go:126 +0x74
+
+goroutine 163 [select, 1 minutes]:
+github.com/kalbasit/ncps/pkg/cache.(*Cache).processHealthChanges(0x0?, {0x20f71f8, 0x2774ba01290}, 0x2774be88d90)
+	github.com/kalbasit/ncps/pkg/cache/cache.go:8529 +0xa5
+github.com/kalbasit/ncps/pkg/cache.New.func1()
+	github.com/kalbasit/ncps/pkg/cache/cache.go:788 +0x25
+github.com/kalbasit/ncps/pkg/analytics.SafeGo.func1()
+	github.com/kalbasit/ncps/pkg/analytics/analytics.go:133 +0x53
+created by github.com/kalbasit/ncps/pkg/analytics.SafeGo in goroutine 1
+	github.com/kalbasit/ncps/pkg/analytics/analytics.go:126 +0x74
+
+goroutine 141 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e3000, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774bc2a700?, 0x2774b8cc000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774bc2a700, {0x2774b8cc000, 0x1500, 0x1500})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774bc2a700, {0x2774b8cc000?, 0x2774b8cc03f?, 0x5?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774bc9a038, {0x2774b8cc000?, 0x7fb17058a4c0?, 0x7fb1bab05fa0?})
+	net/net.go:196 +0x45
+crypto/tls.(*atLeastReader).Read(0x2774c354270, {0x2774b8cc000?, 0x2774bdaca48?, 0x4561c8?})
+	crypto/tls/conn.go:815 +0x3b
+bytes.(*Buffer).ReadFrom(0x2774bfe0628, {0x20e5780, 0x2774c354270})
+	bytes/buffer.go:229 +0x98
+crypto/tls.(*Conn).readFromUntil(0x2774bfe0388, {0x20e2e60, 0x2774bc9a038}, 0xc8524c?)
+	crypto/tls/conn.go:837 +0xde
+crypto/tls.(*Conn).readRecordOrCCS(0x2774bfe0388, 0x0)
+	crypto/tls/conn.go:626 +0x3db
+crypto/tls.(*Conn).readRecord(...)
+	crypto/tls/conn.go:588
+crypto/tls.(*Conn).Read(0x2774bfe0388, {0x2774bd9a000, 0x1000, 0xd13740?})
+	crypto/tls/conn.go:1393 +0x145
+bufio.(*Reader).Read(0x2774c428960, {0x2774c1c4584, 0x9, 0xd3038e?})
+	bufio/bufio.go:245 +0x197
+io.ReadAtLeast({0x20e1840, 0x2774c428960}, {0x2774c1c4584, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+net/http.http2readFrameHeader({0x2774c1c4584, 0x9, 0x27700000005?}, {0x20e1840?, 0x2774c428960?})
+	net/http/h2_bundle.go:1805 +0x65
+net/http.(*http2Framer).ReadFrameHeader(0x2774c1c4540)
+	net/http/h2_bundle.go:2071 +0x6b
+net/http.(*http2Framer).ReadFrame(0x2774c1c4540)
+	net/http/h2_bundle.go:2130 +0x18
+net/http.(*http2clientConnReadLoop).run(0x2774bdacfa8)
+	net/http/h2_bundle.go:9550 +0xca
+net/http.(*http2ClientConn).readLoop(0x2774c4228c0)
+	net/http/h2_bundle.go:9419 +0x52
+created by net/http.(*http2Transport).newClientConn in goroutine 140
+	net/http/h2_bundle.go:8171 +0xda5
+
+goroutine 165 [select]:
+github.com/robfig/cron/v3.(*Cron).run(0x2774bcaf5e0)
+	github.com/robfig/cron/v3@v3.0.1/cron.go:263 +0x4df
+created by github.com/robfig/cron/v3.(*Cron).Start in goroutine 1
+	github.com/robfig/cron/v3@v3.0.1/cron.go:222 +0xb6
+
+goroutine 172 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1ba81e600, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774be28380?, 0x2774c3ee000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774be28380, {0x2774c3ee000, 0xa000, 0xa000})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774be28380, {0x2774c3ee000?, 0x2774c3ee056?, 0x5?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774b782078, {0x2774c3ee000?, 0x7fb17038e9a8?, 0x7fb1bab015d0?})
+	net/net.go:196 +0x45
+crypto/tls.(*atLeastReader).Read(0x2774c41abd0, {0x2774c3ee000?, 0x2774bf27a48?, 0x4561c8?})
+	crypto/tls/conn.go:815 +0x3b
+bytes.(*Buffer).ReadFrom(0x2774bfe10a8, {0x20e5780, 0x2774c41abd0})
+	bytes/buffer.go:229 +0x98
+crypto/tls.(*Conn).readFromUntil(0x2774bfe0e08, {0x20e2e60, 0x2774b782078}, 0xc8524c?)
+	crypto/tls/conn.go:837 +0xde
+crypto/tls.(*Conn).readRecordOrCCS(0x2774bfe0e08, 0x0)
+	crypto/tls/conn.go:626 +0x3db
+crypto/tls.(*Conn).readRecord(...)
+	crypto/tls/conn.go:588
+crypto/tls.(*Conn).Read(0x2774bfe0e08, {0x2774be9c000, 0x1000, 0xd13740?})
+	crypto/tls/conn.go:1393 +0x145
+bufio.(*Reader).Read(0x2774bc439e0, {0x2774bdc6204, 0x9, 0xd3038e?})
+	bufio/bufio.go:245 +0x197
+io.ReadAtLeast({0x20e1840, 0x2774bc439e0}, {0x2774bdc6204, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+net/http.http2readFrameHeader({0x2774bdc6204, 0x9, 0x27700000007?}, {0x20e1840?, 0x2774bc439e0?})
+	net/http/h2_bundle.go:1805 +0x65
+net/http.(*http2Framer).ReadFrameHeader(0x2774bdc61c0)
+	net/http/h2_bundle.go:2071 +0x6b
+net/http.(*http2Framer).ReadFrame(0x2774bdc61c0)
+	net/http/h2_bundle.go:2130 +0x18
+net/http.(*http2clientConnReadLoop).run(0x2774bf27fa8)
+	net/http/h2_bundle.go:9550 +0xca
+net/http.(*http2ClientConn).readLoop(0x2774bfdc380)
+	net/http/h2_bundle.go:9419 +0x52
+created by net/http.(*http2Transport).newClientConn in goroutine 171
+	net/http/h2_bundle.go:8171 +0xda5
+
+goroutine 73 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1ba81e800, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774b9f2980?, 0x2774bf30000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774b9f2980, {0x2774bf30000, 0x1300, 0x1300})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774b9f2980, {0x2774bf30000?, 0x2774bf30186?, 0x5?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774b8821f8, {0x2774bf30000?, 0x7fb17038e9a8?, 0x7fb1bab015d0?})
+	net/net.go:196 +0x45
+crypto/tls.(*atLeastReader).Read(0x2774c41acd8, {0x2774bf30000?, 0x2774bdaaa48?, 0x4561c8?})
+	crypto/tls/conn.go:815 +0x3b
+bytes.(*Buffer).ReadFrom(0x2774bfe02a8, {0x20e5780, 0x2774c41acd8})
+	bytes/buffer.go:229 +0x98
+crypto/tls.(*Conn).readFromUntil(0x2774bfe0008, {0x20e2e60, 0x2774b8821f8}, 0xc8524c?)
+	crypto/tls/conn.go:837 +0xde
+crypto/tls.(*Conn).readRecordOrCCS(0x2774bfe0008, 0x0)
+	crypto/tls/conn.go:626 +0x3db
+crypto/tls.(*Conn).readRecord(...)
+	crypto/tls/conn.go:588
+crypto/tls.(*Conn).Read(0x2774bfe0008, {0x2774bf1b000, 0x1000, 0xd13740?})
+	crypto/tls/conn.go:1393 +0x145
+bufio.(*Reader).Read(0x2774c090360, {0x2774bf3a3c4, 0x9, 0xd3038e?})
+	bufio/bufio.go:245 +0x197
+io.ReadAtLeast({0x20e1840, 0x2774c090360}, {0x2774bf3a3c4, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+net/http.http2readFrameHeader({0x2774bf3a3c4, 0x9, 0x27700000005?}, {0x20e1840?, 0x2774c090360?})
+	net/http/h2_bundle.go:1805 +0x65
+net/http.(*http2Framer).ReadFrameHeader(0x2774bf3a380)
+	net/http/h2_bundle.go:2071 +0x6b
+net/http.(*http2Framer).ReadFrame(0x2774bf3a380)
+	net/http/h2_bundle.go:2130 +0x18
+net/http.(*http2clientConnReadLoop).run(0x2774bdaafa8)
+	net/http/h2_bundle.go:9550 +0xca
+net/http.(*http2ClientConn).readLoop(0x2774bf3c540)
+	net/http/h2_bundle.go:9419 +0x52
+created by net/http.(*http2Transport).newClientConn in goroutine 72
+	net/http/h2_bundle.go:8171 +0xda5
+
+goroutine 198 [select, 1 minutes]:
+google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher(0x2774bc2a580)
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:224 +0x24a
+created by google.golang.org/grpc/internal/resolver/dns.(*dnsBuilder).Build in goroutine 151
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:153 +0x319
+
+goroutine 249 [select, 1 minutes]:
+google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher(0x2774b9f2b00)
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:224 +0x24a
+created by google.golang.org/grpc/internal/resolver/dns.(*dnsBuilder).Build in goroutine 11
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:153 +0x319
+
+goroutine 189 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1ba81e200, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774be28a00?, 0x2774c0b0000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774be28a00, {0x2774c0b0000, 0x1300, 0x1300})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774be28a00, {0x2774c0b0000?, 0x2774c0b0000?, 0x5?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774b7821c0, {0x2774c0b0000?, 0x7fb1ba8685f8?, 0x7fb1bab05fa0?})
+	net/net.go:196 +0x45
+crypto/tls.(*atLeastReader).Read(0x2774c0bf518, {0x2774c0b0000?, 0x2774c194a48?, 0x4561c8?})
+	crypto/tls/conn.go:815 +0x3b
+bytes.(*Buffer).ReadFrom(0x2774b9d5b28, {0x20e5780, 0x2774c0bf518})
+	bytes/buffer.go:229 +0x98
+crypto/tls.(*Conn).readFromUntil(0x2774b9d5888, {0x20e2e60, 0x2774b7821c0}, 0xc8524c?)
+	crypto/tls/conn.go:837 +0xde
+crypto/tls.(*Conn).readRecordOrCCS(0x2774b9d5888, 0x0)
+	crypto/tls/conn.go:626 +0x3db
+crypto/tls.(*Conn).readRecord(...)
+	crypto/tls/conn.go:588
+crypto/tls.(*Conn).Read(0x2774b9d5888, {0x2774c09c000, 0x1000, 0xd13740?})
+	crypto/tls/conn.go:1393 +0x145
+bufio.(*Reader).Read(0x2774bff3b60, {0x2774bdc63c4, 0x9, 0xd3038e?})
+	bufio/bufio.go:245 +0x197
+io.ReadAtLeast({0x20e1840, 0x2774bff3b60}, {0x2774bdc63c4, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+net/http.http2readFrameHeader({0x2774bdc63c4, 0x9, 0x27700000005?}, {0x20e1840?, 0x2774bff3b60?})
+	net/http/h2_bundle.go:1805 +0x65
+net/http.(*http2Framer).ReadFrameHeader(0x2774bdc6380)
+	net/http/h2_bundle.go:2071 +0x6b
+net/http.(*http2Framer).ReadFrame(0x2774bdc6380)
+	net/http/h2_bundle.go:2130 +0x18
+net/http.(*http2clientConnReadLoop).run(0x2774c194fa8)
+	net/http/h2_bundle.go:9550 +0xca
+net/http.(*http2ClientConn).readLoop(0x2774bfdc8c0)
+	net/http/h2_bundle.go:9419 +0x52
+created by net/http.(*http2Transport).newClientConn in goroutine 188
+	net/http/h2_bundle.go:8171 +0xda5
+
+goroutine 206 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e2c00, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x10?, 0xb?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).RawRead(0x2774bc2a900, 0x2774bda1c80)
+	internal/poll/fd_unix.go:710 +0x125
+net.(*rawConn).Read(0x2774bc1e578, 0x2774c2a2ca0?)
+	net/rawconn.go:44 +0x36
+google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady(0x2774c1bc230, 0x2774c2a2d00?, {0x20f1678, 0x2774c1b18f0})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:114 +0xa7
+google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read(0x2774b9ce1c0, {0x2774c1c4044, 0x9, 0x1ec1d20?})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:221 +0x174
+io.ReadAtLeast({0x20eafc0, 0x2774b9ce1c0}, {0x2774c1c4044, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+golang.org/x/net/http2.readFrameHeader({0x2774c1c4044, 0x9, 0x27700000000?}, {0x20eafc0?, 0x2774b9ce1c0?})
+	golang.org/x/net@v0.57.0/http2/frame.go:250 +0x65
+golang.org/x/net/http2.(*Framer).ReadFrameHeader(0x2774c1c4000)
+	golang.org/x/net@v0.57.0/http2/frame.go:513 +0x6b
+google.golang.org/grpc/internal/transport.(*framer).readFrame(0x2774bc2aa00)
+	google.golang.org/grpc@v1.82.1/internal/transport/http_util.go:493 +0x45
+google.golang.org/grpc/internal/transport.(*http2Client).reader(0x2774bc6ad88, 0x2774b9ce230)
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:1711 +0x1ba
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 223
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:420 +0x1e13
+
+goroutine 226 [select]:
+google.golang.org/grpc/internal/transport.(*controlBuffer).get(0x2774c1b62c0, 0x1)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:420 +0x10a
+google.golang.org/grpc/internal/transport.(*loopyWriter).run(0x2774baf4000)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:595 +0x78
+google.golang.org/grpc/internal/transport.NewHTTP2Client.func6()
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:478 +0xd2
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 223
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:476 +0x23db
+
+goroutine 209 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e2a00, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x12?, 0xb?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).RawRead(0x2774b928c80, 0x2774bf82140)
+	internal/poll/fd_unix.go:710 +0x125
+net.(*rawConn).Read(0x2774bc1e138, 0x2774bdabca0?)
+	net/rawconn.go:44 +0x36
+google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady(0x2774c1bc370, 0x2774bdabd00?, {0x20f1678, 0x2774c1b18f0})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:114 +0xa7
+google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read(0x2774b9ce150, {0x2774bd86d64, 0x9, 0x1ec1d20?})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:221 +0x174
+io.ReadAtLeast({0x20eafc0, 0x2774b9ce150}, {0x2774bd86d64, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+golang.org/x/net/http2.readFrameHeader({0x2774bd86d64, 0x9, 0x27700000000?}, {0x20eafc0?, 0x2774b9ce150?})
+	golang.org/x/net@v0.57.0/http2/frame.go:250 +0x65
+golang.org/x/net/http2.(*Framer).ReadFrameHeader(0x2774bd86d20)
+	golang.org/x/net@v0.57.0/http2/frame.go:513 +0x6b
+google.golang.org/grpc/internal/transport.(*framer).readFrame(0x2774bc2aa80)
+	google.golang.org/grpc@v1.82.1/internal/transport/http_util.go:493 +0x45
+google.golang.org/grpc/internal/transport.(*http2Client).reader(0x2774b982248, 0x2774b9ce2a0)
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:1711 +0x1ba
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 145
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:420 +0x1e13
+
+goroutine 274 [select]:
+google.golang.org/grpc/internal/transport.(*controlBuffer).get(0x2774c0ce000, 0x1)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:420 +0x10a
+google.golang.org/grpc/internal/transport.(*loopyWriter).run(0x2774bb50500)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:595 +0x78
+google.golang.org/grpc/internal/transport.NewHTTP2Client.func6()
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:478 +0xd2
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 145
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:476 +0x23db
+
+goroutine 367 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e2e00, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774bf10080?, 0x2774c1b6221?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774bf10080, {0x2774c1b6221, 0x1, 0x1})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774bf10080, {0x2774c1b6221?, 0x3257cb0?, 0x2774bc77770?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774c412028, {0x2774c1b6221?, 0x6922ef?, 0x2774bda5360?})
+	net/net.go:196 +0x45
+net/http.(*connReader).backgroundRead(0x2774c1b6200)
+	net/http/server.go:702 +0x33
+created by net/http.(*connReader).startBackgroundRead in goroutine 366
+	net/http/server.go:698 +0xb6
+
+goroutine 366 [syscall]:
+syscall.Syscall6(0x106, 0xffffffffffffff9c, 0x2774bf00240, 0x2774c42a6b8, 0x0, 0x0, 0x0)
+	syscall/syscall_linux.go:96 +0x39
+syscall.fstatat(0xffffffffffffff9c, {0x2774bf001e0?, 0x2774c48a810?}, 0x2774c42a6b8, 0x0)
+	syscall/zsyscall_linux_amd64.go:1437 +0x96
+syscall.Stat(...)
+	syscall/syscall_linux_amd64.go:61
+os.statNolog.func1(...)
+	os/stat_unix.go:32
+os.ignoringEINTR(...)
+	os/file_posix.go:263
+os.statNolog({0x2774bf001e0, 0x54})
+	os/stat_unix.go:31 +0x52
+os.Stat({0x2774bf001e0, 0x54})
+	os/stat.go:13 +0x2c
+github.com/kalbasit/ncps/pkg/storage/local.(*Store).StatNar(0x2774bda16b0, {0x20f71f8, 0x2774c48a810}, {{0x2774bf38009, 0x34}, {0x2001062, 0x4}, 0x2774c48a720, 0x0, {0x0, ...}})
+	github.com/kalbasit/ncps/pkg/storage/local/local.go:367 +0x731
+github.com/kalbasit/ncps/pkg/cache.(*Cache).statNarInStore(0x2774bb27790?, {0x20f71f8?, 0x2774c48a810?}, {{0x2774bf38009, 0x34}, {0x2001062, 0x4}, 0x2774c48a720, 0x0, {0x0, ...}})
+	github.com/kalbasit/ncps/pkg/cache/cache.go:4954 +0xe4
+github.com/kalbasit/ncps/pkg/cache.(*Cache).HasNarInStore(...)
+	github.com/kalbasit/ncps/pkg/cache/cache.go:4903
+github.com/kalbasit/ncps/pkg/cache.(*Cache).GetNar.func2()
+	github.com/kalbasit/ncps/pkg/cache/cache.go:1307 +0x2a5
+github.com/kalbasit/ncps/pkg/cache.(*Cache).withReadLock(0x2774ba352c0, {0x20f71f8, 0x2774c48a7b0}, {0x20032c9, 0x6}, {0x2774bf38050, 0x41}, 0x2774b7d44e8)
+	github.com/kalbasit/ncps/pkg/cache/cache.go:7231 +0x270
+github.com/kalbasit/ncps/pkg/cache.(*Cache).GetNar(0x2774ba352c0, {0x20f71f8, 0x2774c48a780}, {{0x2774bf38009, 0x34}, {0x2001062, 0x4}, 0x2774c48a720, 0x0, {0x0, ...}})
+	github.com/kalbasit/ncps/pkg/cache/cache.go:1294 +0x545
+github.com/kalbasit/ncps/pkg/server.(*Server).registerRoutes.(*Server).getNar.func4({0x7fb1705e0da0, 0x2774c1b6500}, 0x2774b9f0a00, {{0x2774bf38009, 0x34}, {0x2001062, 0x4}, 0x2774c48a720, 0x0, {0x0, ...}})
+	github.com/kalbasit/ncps/pkg/server/server.go:926 +0x2e5
+github.com/kalbasit/ncps/pkg/server.(*Server).registerRoutes.(*Server).getNar.(*Server).withNarURL.func10({0x7fb1705e0da0, 0x2774c1b6500}, 0x2774b9f08c0)
+	github.com/kalbasit/ncps/pkg/server/server.go:871 +0x707
+net/http.HandlerFunc.ServeHTTP(0x1d971e0?, {0x7fb1705e0da0?, 0x2774c1b6500?}, 0xb?)
+	net/http/server.go:2284 +0x29
+github.com/go-chi/chi/v5.(*Mux).routeHTTP(0x2774bc42420, {0x7fb1705e0da0, 0x2774c1b6500}, 0x2774b9f08c0)
+	github.com/go-chi/chi/v5@v5.3.2/mux.go:483 +0x4ff
+net/http.HandlerFunc.ServeHTTP(0x50000033bb160?, {0x7fb1705e0da0?, 0x2774c1b6500?}, 0x30?)
+	net/http/server.go:2284 +0x29
+github.com/kalbasit/ncps/pkg/server.(*Server).requireGetToken-fm.(*Server).requireGetToken.func1({0x7fb1705e0da0?, 0x2774c1b6500?}, 0x2774ba061c0?)
+	github.com/kalbasit/ncps/pkg/server/server.go:213 +0x2b7
+net/http.HandlerFunc.ServeHTTP(0x3259610?, {0x7fb1705e0da0?, 0x2774c1b6500?}, 0x0?)
+	net/http/server.go:2284 +0x29
+github.com/kalbasit/ncps/pkg/server.(*Server).skipTelemetryForInfraRoutes.func1.requestLogger.2({0x20f6980, 0x2774c5062a0}, 0x2774b9f08c0)
+	github.com/kalbasit/ncps/pkg/server/server.go:336 +0x26b
+net/http.HandlerFunc.ServeHTTP(0x20f6980?, {0x20f6980?, 0x2774c5062a0?}, 0x20f71f8?)
+	net/http/server.go:2284 +0x29
+github.com/riandyrn/otelchi/metric.NewServerResponseBodySize.func1.1({0x20f6980?, 0x2774c506240?}, 0x2774b9f0640)
+	github.com/riandyrn/otelchi@v0.12.3/metric/server_response_body_size.go:32 +0xc8
+net/http.HandlerFunc.ServeHTTP(0x325f950?, {0x20f6980?, 0x2774c506240?}, 0x1?)
+	net/http/server.go:2284 +0x29
+github.com/riandyrn/otelchi/metric.NewServerActiveRequests.func1.1({0x20f6980, 0x2774c506240}, 0x2774b9f0640)
+	github.com/riandyrn/otelchi@v0.12.3/metric/server_active_requests.go:34 +0x231
+net/http.HandlerFunc.ServeHTTP(0x2774b7d5168?, {0x20f6980?, 0x2774c506240?}, 0x2774b7d51b8?)
+	net/http/server.go:2284 +0x29
+github.com/riandyrn/otelchi/metric.NewServerRequestDuration.func1.1({0x20f6980, 0x2774c506240}, 0x2774b9f0640)
+	github.com/riandyrn/otelchi@v0.12.3/metric/server_request_duration.go:40 +0xa9
+net/http.HandlerFunc.ServeHTTP(0x20f3700?, {0x20f6980?, 0x2774c506240?}, 0x2070e05?)
+	net/http/server.go:2284 +0x29
+github.com/riandyrn/otelchi.traceware.ServeHTTP({{{0x0, 0x0}, {0x20f3130, 0x2774bca0d38}, {0x20f7818, 0x2774bc42420}, 0x0, {0x0, 0x0, 0x0}, ...}, ...}, ...)
+	github.com/riandyrn/otelchi@v0.12.3/middleware.go:199 +0x1174
+github.com/kalbasit/ncps/pkg/server.(*Server).skipTelemetryForInfraRoutes.func1({0x20f3700, 0x2774c18c3c0}, 0x2774b9f0500)
+	github.com/kalbasit/ncps/pkg/server/server.go:184 +0x262
+net/http.HandlerFunc.ServeHTTP(0x3396fc0?, {0x20f3700?, 0x2774c18c3c0?}, 0xf?)
+	net/http/server.go:2284 +0x29
+github.com/kalbasit/ncps/pkg/server.recoverer.func1({0x20f3700?, 0x2774c18c3c0?}, 0x0?)
+	github.com/kalbasit/ncps/pkg/server/server.go:281 +0x6c
+net/http.HandlerFunc.ServeHTTP(0x0?, {0x20f3700?, 0x2774c18c3c0?}, 0x2774c40d9c8?)
+	net/http/server.go:2284 +0x29
+github.com/go-chi/chi/v5/middleware.ClientIPFromXFF.func1.1({0x20f3700, 0x2774c18c3c0}, 0x2774b9f0500)
+	github.com/go-chi/chi/v5@v5.3.2/middleware/client_ip.go:114 +0x24c
+net/http.HandlerFunc.ServeHTTP(0x2774bf38004?, {0x20f3700?, 0x2774c18c3c0?}, 0x130?)
+	net/http/server.go:2284 +0x29
+github.com/kalbasit/ncps/pkg/server.(*Server).createRouter.Heartbeat.func2.1({0x20f3700, 0x2774c18c3c0}, 0x2774b9f0500?)
+	github.com/go-chi/chi/v5@v5.3.2/middleware/heartbeat.go:21 +0x12d
+net/http.HandlerFunc.ServeHTTP(0x20f7230?, {0x20f3700?, 0x2774c18c3c0?}, 0x3253170?)
+	net/http/server.go:2284 +0x29
+github.com/go-chi/chi/v5.(*Mux).ServeHTTP(0x2774bc42420, {0x20f3700, 0x2774c18c3c0}, 0x2774b9f03c0)
+	github.com/go-chi/chi/v5@v5.3.2/mux.go:90 +0x322
+github.com/kalbasit/ncps/pkg/server.(*Server).ServeHTTP(0x48e2f9?, {0x20f3700?, 0x2774c18c3c0?}, 0x2774c40db30?)
+	github.com/kalbasit/ncps/pkg/server/server.go:110 +0x25
+net/http.serverHandler.ServeHTTP({0x2774c1b6200?}, {0x20f3700?, 0x2774c18c3c0?}, 0x1?)
+	net/http/server.go:3309 +0x8e
+net/http.(*conn).serve(0x2774c1b3dd0, {0x20f71f8, 0x2774bd9d5c0})
+	net/http/server.go:2067 +0x690
+created by net/http.(*Server).Serve in goroutine 1
+	net/http/server.go:3462 +0x485
+
+goroutine 88 [select]:
+google.golang.org/grpc/internal/resolver/dns.(*dnsResolver).watcher(0x2774c2ae400)
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:224 +0x24a
+created by google.golang.org/grpc/internal/resolver/dns.(*dnsBuilder).Build in goroutine 147
+	google.golang.org/grpc@v1.82.1/internal/resolver/dns/dns_resolver.go:153 +0x319
+
+goroutine 419 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1703e2800, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x17?, 0xb?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).RawRead(0x2774c16b400, 0x2774bb662b0)
+	internal/poll/fd_unix.go:710 +0x125
+net.(*rawConn).Read(0x2774bc1e348, 0x2774bfd3ca0?)
+	net/rawconn.go:44 +0x36
+google.golang.org/grpc/internal/transport/readyreader.(*nonBlockingReader).ReadOnReady(0x2774c2b6550, 0x2774bfd3d00?, {0x20f1678, 0x2774c1b18f0})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:114 +0xa7
+google.golang.org/grpc/internal/transport/readyreader.(*bufReadyReader).Read(0x2774ba068c0, {0x2774bd86f24, 0x9, 0x1ec1d20?})
+	google.golang.org/grpc@v1.82.1/internal/transport/readyreader/ready_reader.go:221 +0x174
+io.ReadAtLeast({0x20eafc0, 0x2774ba068c0}, {0x2774bd86f24, 0x9, 0x9}, 0x9)
+	io/io.go:335 +0x8e
+io.ReadFull(...)
+	io/io.go:354
+golang.org/x/net/http2.readFrameHeader({0x2774bd86f24, 0x9, 0x27700000000?}, {0x20eafc0?, 0x2774ba068c0?})
+	golang.org/x/net@v0.57.0/http2/frame.go:250 +0x65
+golang.org/x/net/http2.(*Framer).ReadFrameHeader(0x2774bd86ee0)
+	golang.org/x/net@v0.57.0/http2/frame.go:513 +0x6b
+google.golang.org/grpc/internal/transport.(*framer).readFrame(0x2774c16b480)
+	google.golang.org/grpc@v1.82.1/internal/transport/http_util.go:493 +0x45
+google.golang.org/grpc/internal/transport.(*http2Client).reader(0x2774bc6b688, 0x2774ba06930)
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:1711 +0x1ba
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 405
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:420 +0x1e13
+
+goroutine 406 [select]:
+google.golang.org/grpc/internal/transport.(*controlBuffer).get(0x2774c158b80, 0x1)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:420 +0x10a
+google.golang.org/grpc/internal/transport.(*loopyWriter).run(0x2774bc8e280)
+	google.golang.org/grpc@v1.82.1/internal/transport/controlbuf.go:595 +0x78
+google.golang.org/grpc/internal/transport.NewHTTP2Client.func6()
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:478 +0xd2
+created by google.golang.org/grpc/internal/transport.NewHTTP2Client in goroutine 405
+	google.golang.org/grpc@v1.82.1/internal/transport/http2_client.go:476 +0x23db
+
+goroutine 401 [IO wait]:
+internal/poll.runtime_pollWait(0x7fb1705e0a00, 0x72)
+	runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x2774c16b000?, 0x2774bdd2021?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x2774c16b000, {0x2774bdd2021, 0x1, 0x1})
+	internal/poll/fd_unix.go:165 +0x2ae
+net.(*netFD).Read(0x2774c16b000, {0x2774bdd2021?, 0x0?, 0x2774bc73fd0?})
+	net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x2774b782008, {0x2774bdd2021?, 0x1000000010000?, 0x2774bb83ab0?})
+	net/net.go:196 +0x45
+net/http.(*connReader).backgroundRead(0x2774bdd2000)
+	net/http/server.go:702 +0x33
+created by net/http.(*connReader).startBackgroundRead in goroutine 452
+	net/http/server.go:698 +0xb6

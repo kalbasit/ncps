@@ -452,6 +452,16 @@ func serveCommand(
 				Sources: flagSources("cache.cdc.chunk-wait-timeout", "CACHE_CDC_CHUNK_WAIT_TIMEOUT"),
 				Value:   30 * time.Second,
 			},
+			&cli.DurationFlag{
+				Name: "cache-storage-stat-timeout",
+				Usage: "Max time the NAR read path waits on a storage presence probe before treating " +
+					"presence as undetermined. Keep it below your reverse-proxy read timeout: on a hard " +
+					"NFS mount a single uncancellable stat has been measured blocking ~57s, long enough " +
+					"for the proxy to abort the response mid-body and hand the client a truncated 200. " +
+					"Set to 0 to disable the bound and restore unbounded waiting.",
+				Sources: flagSources("cache.storage.stat-timeout", "CACHE_STORAGE_STAT_TIMEOUT"),
+				Value:   5 * time.Second,
+			},
 			// In-flight NAR staging flags (change serve-whole-nar-in-flight).
 			&cli.BoolFlag{
 				Name: "cache-inflight-staging-enabled",
@@ -1247,6 +1257,8 @@ func createCache(
 	}
 
 	c.SetChunkWaitTimeout(cmd.Duration("cache-cdc-chunk-wait-timeout"))
+
+	c.SetStatTimeout(cmd.Duration("cache-storage-stat-timeout"))
 
 	// Configure lazy chunking
 	cdcLazyChunkingEnabled := cmd.Bool("cache-cdc-lazy-chunking-enabled")

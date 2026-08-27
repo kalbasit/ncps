@@ -69,6 +69,7 @@ func TestPrimedCountersExposedAtZero(t *testing.T) {
 		"ncps_lru_bytes_freed_total",
 		"ncps_background_migration_objects_total",
 		"ncps_download_coordination_fallback_total",
+		"ncps_storage_stat_timeout_total",
 		"ncps_lock_acquisitions_total",
 		"ncps_lock_failures_total",
 		"ncps_lock_retry_attempts_total",
