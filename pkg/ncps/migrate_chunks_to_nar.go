@@ -327,39 +327,58 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 
 		progressWg.Add(1)
 
+		// logProgress emits one progress line from the counters as they stand.
+		logProgress := func() {
+			elapsed := time.Since(startTime)
+			processed := atomic.LoadInt32(&totalProcessed)
+			succeeded := atomic.LoadInt32(&totalSucceeded)
+			failed := atomic.LoadInt32(&totalFailed)
+			skipped := atomic.LoadInt32(&totalSkipped)
+
+			var rate float64
+			if durationInSeconds := elapsed.Seconds(); durationInSeconds > 0 {
+				rate = float64(processed) / durationInSeconds
+			}
+
+			var percent float64
+			if total > 0 {
+				percent = float64(processed) / float64(total) * 100
+			}
+
+			logger.Info().
+				Int64("total", total).
+				Int32("processed", processed).
+				Int32("succeeded", succeeded).
+				Int32("failed", failed).
+				Int32("skipped", skipped).
+				Int32("purged", atomic.LoadInt32(&totalPurged)).
+				Str("percent", fmt.Sprintf("%.2f%%", percent)).
+				Str("elapsed", elapsed.Round(time.Second).String()).
+				Float64("rate", rate).
+				Msg("migration progress")
+		}
+
+		// Emit one line immediately when there is work to do, then one per tick.
+		//
+		// A purely ticker-driven reporter emits nothing at all when the migration
+		// finishes inside a single interval, because the ticker never fires. That is a
+		// real reporting gap for short migrations, and it made the progress test
+		// non-deterministic: with a 1ms interval and a one-item migration it raced the
+		// first tick and failed roughly four runs in five. Reporting up front also gives
+		// operators immediate feedback instead of a silent first interval.
+		//
+		// Gated on total > 0 so an empty run stays completely silent.
+		if total > 0 {
+			logProgress()
+		}
+
 		go func() {
 			defer progressWg.Done()
 
 			for {
 				select {
 				case <-progressTicker.C:
-					elapsed := time.Since(startTime)
-					processed := atomic.LoadInt32(&totalProcessed)
-					succeeded := atomic.LoadInt32(&totalSucceeded)
-					failed := atomic.LoadInt32(&totalFailed)
-					skipped := atomic.LoadInt32(&totalSkipped)
-
-					var rate float64
-					if durationInSeconds := elapsed.Seconds(); durationInSeconds > 0 {
-						rate = float64(processed) / durationInSeconds
-					}
-
-					var percent float64
-					if total > 0 {
-						percent = float64(processed) / float64(total) * 100
-					}
-
-					logger.Info().
-						Int64("total", total).
-						Int32("processed", processed).
-						Int32("succeeded", succeeded).
-						Int32("failed", failed).
-						Int32("skipped", skipped).
-						Int32("purged", atomic.LoadInt32(&totalPurged)).
-						Str("percent", fmt.Sprintf("%.2f%%", percent)).
-						Str("elapsed", elapsed.Round(time.Second).String()).
-						Float64("rate", rate).
-						Msg("migration progress")
+					logProgress()
 				case <-progressDone:
 					return
 				}
