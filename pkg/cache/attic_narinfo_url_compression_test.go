@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,10 +63,11 @@ import (
 //     NAR, which it then serves while still advertising Compression: zstd.
 //
 // The reporter of #1470 turned out to be on the CONTENT-level variant, and the
-// compression-resolution fix cured them — so the transport-level variant was
-// never their failure mode. It is kept here because the gap it describes is real
-// and code-verified, not because anything is known to hit it. See the skip
-// below.
+// compression-resolution fix cured them. The TRANSPORT-level variant was never
+// their failure mode, but it was a real gap of its own and is now closed too:
+// ncps no longer requests transport zstd for a NAR the narinfo already declares
+// compressed, so the proxy modelled below has nothing to wrap and ncps keeps the
+// upstream's own compressed bytes.
 func TestAtticNarInfoURLWithoutCompressionExtension(t *testing.T) {
 	t.Parallel()
 
@@ -80,35 +82,6 @@ func TestAtticNarInfoURLWithoutCompressionExtension(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			if tt.transportEncoding {
-				// Skipped because ncps genuinely fails this case, not because the
-				// test is flaky or wrong. It is a standing description of an open
-				// gap; no fix is planned or in flight, so do not read this as
-				// waiting on anything.
-				//
-				// The gap: upstream.GetNar unconditionally sends
-				// Accept-Encoding: zstd and transparently strips any
-				// Content-Encoding: zstd it gets back. An upstream that applies zstd
-				// at the TRANSPORT level over an uncompressed body therefore leaves
-				// ncps holding a raw NAR, which it stores and serves under a
-				// .nar.zst key while the narinfo advertises Compression: zstd —
-				// nix then reports "input compression not recognized". Resolving the
-				// declared compression (which this file's other subtest covers)
-				// makes the labels agree but cannot make those bytes true.
-				//
-				// Such an upstream is arguably nonconforming and breaks plain nix
-				// too (NixOS/nix#10275). What makes it ncps-specific is that ncps
-				// always advertises zstd while nix's curl often is not built with
-				// it, so a proxy may compress for ncps alone. No real upstream has
-				// been observed doing this.
-				//
-				// To close it: stop requesting transport zstd for content the
-				// narinfo already declares compressed (a change in
-				// pkg/cache/upstream). This subtest should then pass with no edit
-				// here, and the skip can be deleted.
-				t.Skip("open gap, no fix planned: upstream states zstd via Content-Encoding over a raw body")
-			}
 
 			const (
 				// Attic addresses NARs by the 32-char store path hash, which is
@@ -146,7 +119,13 @@ References: %s-attic-1.0
 
 					return true
 				case atticPath:
-					if tt.transportEncoding {
+					// Model a real compressing proxy (Caddy `encode zstd`, nginx, a
+					// CDN): it applies the encoding only when the client advertises
+					// it. That is precisely what made ncps's formerly-unconditional
+					// Accept-Encoding: zstd the trigger — nix's own curl frequently
+					// is not built with zstd, so the proxy compressed for ncps alone
+					// and the same path substituted fine directly.
+					if tt.transportEncoding && strings.Contains(r.Header.Get("Accept-Encoding"), "zstd") {
 						w.Header().Set("Content-Encoding", "zstd")
 					}
 

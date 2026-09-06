@@ -135,6 +135,21 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **A compressing reverse proxy in front of an upstream no longer corrupts
+  already-compressed NARs.** ncps sent `Accept-Encoding: zstd` on *every*
+  upstream NAR fetch and transparently stripped any `Content-Encoding: zstd` it
+  got back. For a NAR the narinfo already declared compressed that bought
+  effectively nothing — zstd over zstd/xz yields ~0% — while inviting a proxy
+  (Caddy's `encode zstd`, nginx, a CDN) to wrap the body. Where the upstream's
+  own content was not in fact compressed, ncps was left holding a raw NAR that it
+  stored and served as `Compression: zstd`, and nix failed with `input compression not recognized`. ncps was uniquely exposed because it always
+  advertised zstd while nix's own curl frequently is not built with it, so such a
+  proxy compressed for ncps alone and the same store path substituted fine
+  directly. Transport zstd is now negotiated only for NARs whose content is
+  uncompressed (the Harmonia shape the negotiation exists for); a
+  `Content-Encoding: zstd` response is still transparently decompressed whether
+  or not it was solicited. (#1470)
+
 - **Upstream narinfos that declare their compression only in the `Compression:`
   header are no longer desynced from the NAR ncps stores.** ncps derived a NAR's
   compression exclusively from the file extension on the narinfo `URL:` field.
