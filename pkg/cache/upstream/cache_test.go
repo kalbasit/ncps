@@ -1,6 +1,7 @@
 package upstream_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -772,4 +775,161 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+// TestGetNarAcceptEncodingMatchesContentCompression pins what ncps puts on the
+// wire when fetching a NAR from an upstream.
+//
+// Asking for transport-level zstd on a NAR the narinfo already declares
+// compressed buys close to nothing — zstd over zstd/xz yields ~0% — and it is
+// actively harmful: a compressing proxy in front of the upstream (Caddy's
+// `encode zstd`, nginx, a CDN) honours the request and wraps the body, which
+// GetNar then transparently strips. If the upstream's own content was not in
+// fact compressed, ncps is left holding a raw NAR that it stores and serves as
+// `Compression: zstd`, and nix fails with "input compression not recognized".
+//
+// ncps is uniquely exposed because it always advertises zstd while nix's own
+// curl frequently is not built with it, so such a proxy compresses for ncps
+// alone. Negotiate only where it can pay: an uncompressed NAR, the Harmonia
+// shape this negotiation exists for.
+func TestGetNarAcceptEncodingMatchesContentCompression(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		compression nar.CompressionType
+		wantZstdReq bool
+	}{
+		{name: "uncompressed NAR still negotiates zstd", compression: nar.CompressionTypeNone, wantZstdReq: true},
+		{name: "zstd NAR does not ask for transport zstd", compression: nar.CompressionTypeZstd, wantZstdReq: false},
+		{name: "xz NAR does not ask for transport zstd", compression: nar.CompressionTypeXz, wantZstdReq: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Guarded: the handler runs on the server's goroutine, and doRequest
+			// may retry, so more than one handler invocation can overlap the
+			// test's read.
+			var (
+				mu                sync.Mutex
+				gotAcceptEncoding string
+			)
+
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/nix-cache-info") {
+					_, _ = io.WriteString(w, testdata.NixStoreInfo(40))
+
+					return
+				}
+
+				mu.Lock()
+				gotAcceptEncoding = r.Header.Get("Accept-Encoding")
+				mu.Unlock()
+
+				_, _ = io.WriteString(w, "some-nar-bytes")
+			}))
+			t.Cleanup(ts.Close)
+
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{})
+			require.NoError(t, err)
+
+			narURL := nar.URL{
+				Hash:        "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4",
+				Compression: tt.compression,
+			}
+
+			resp, err := uc.GetNar(context.Background(), narURL)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			})
+
+			mu.Lock()
+			sentAcceptEncoding := gotAcceptEncoding
+			mu.Unlock()
+
+			if tt.wantZstdReq {
+				assert.Contains(t, sentAcceptEncoding, "zstd",
+					"an uncompressed NAR should still negotiate transport zstd")
+			} else {
+				assert.NotContains(t, sentAcceptEncoding, "zstd",
+					"a NAR whose content is already %s must not request transport zstd", tt.compression)
+			}
+		})
+	}
+}
+
+// TestGetNarDecompressesUnsolicitedContentEncoding pins that the transparent
+// Content-Encoding handling stays unconditional.
+//
+// Now that a compressed NAR is fetched WITHOUT Accept-Encoding: zstd, any
+// Content-Encoding: zstd on such a response is unsolicited. Decompressing it is
+// still correct — a transfer encoding is a property of the response, not of what
+// we asked for — and refusing to would turn a working fetch from an eager but
+// conforming upstream into a corrupt one. This guards against a future
+// "only strip what we negotiated" simplification.
+func TestGetNarDecompressesUnsolicitedContentEncoding(t *testing.T) {
+	t.Parallel()
+
+	const body = "the-underlying-nar-bytes"
+
+	var compressed bytes.Buffer
+
+	zw := zstd.NewPooledWriter(&compressed)
+	_, err := zw.Write([]byte(body))
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+
+	var (
+		mu                sync.Mutex
+		gotAcceptEncoding string
+	)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/nix-cache-info") {
+			_, _ = io.WriteString(w, testdata.NixStoreInfo(40))
+
+			return
+		}
+
+		// Unsolicited: the NAR below is declared zstd, so ncps does not negotiate
+		// transport zstd, yet this upstream applies it anyway. Recorded here and
+		// asserted on the test goroutine — testify must not FailNow off it.
+		mu.Lock()
+		gotAcceptEncoding = r.Header.Get("Accept-Encoding")
+		mu.Unlock()
+
+		w.Header().Set("Content-Encoding", "zstd")
+		_, _ = w.Write(compressed.Bytes())
+	}))
+	t.Cleanup(ts.Close)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{})
+	require.NoError(t, err)
+
+	narURL := nar.URL{
+		Hash:        "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4",
+		Compression: nar.CompressionTypeZstd,
+	}
+
+	resp, err := uc.GetNar(context.Background(), narURL)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	mu.Lock()
+	sentAcceptEncoding := gotAcceptEncoding
+	mu.Unlock()
+
+	assert.NotContains(t, sentAcceptEncoding, "zstd",
+		"precondition: a zstd NAR must not have negotiated transport zstd")
+	assert.Equal(t, body, string(got),
+		"an unsolicited Content-Encoding: zstd must still be transparently decompressed")
+	assert.Empty(t, resp.Header.Get("Content-Encoding"),
+		"the consumed transfer encoding must be stripped from the response headers")
 }

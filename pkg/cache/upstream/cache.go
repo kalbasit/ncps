@@ -531,9 +531,11 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 }
 
 // GetNar returns the NAR archive from the cache server.
-// It always sends Accept-Encoding: zstd to request compressed transfer when possible.
-// If the response has Content-Encoding: zstd, the body is transparently decompressed
-// so the caller always receives raw (uncompressed) NAR bytes.
+// For a Compression:none NAR it sends Accept-Encoding: zstd to request compressed
+// transfer; it deliberately does NOT for a NAR whose content is already
+// compressed (see the rationale at the header below). If the response carries
+// Content-Encoding: zstd it is transparently decompressed regardless of whether
+// we negotiated it, since that is the correct handling of a transfer encoding.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
@@ -561,13 +563,29 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 		Info().
 		Msg("download the nar from upstream")
 
-	// Always request zstd-compressed transfer for bandwidth savings.
-	// Upstreams that don't support it (e.g. nix-serve) will simply ignore this header.
-	zstdMutator := func(r *http.Request) {
-		r.Header.Set("Accept-Encoding", "zstd")
-	}
+	// Request zstd-compressed transfer for bandwidth savings, but ONLY for a NAR
+	// whose content is uncompressed — the Harmonia shape this negotiation exists
+	// for. Upstreams that don't support it (e.g. nix-serve) simply ignore the
+	// header.
+	//
+	// Asking for it on an already-compressed NAR is not merely wasted CPU on both
+	// ends (zstd over zstd/xz yields ~0%): a compressing proxy in front of the
+	// upstream (Caddy's `encode zstd`, nginx, a CDN) honours the request and wraps
+	// the body, which this function then transparently strips below. Were the
+	// upstream's own content not in fact compressed, ncps would be left holding a
+	// raw NAR that it goes on to store and serve as `Compression: zstd`, and nix
+	// fails with "input compression not recognized". ncps was uniquely exposed to
+	// that because it always advertised zstd while nix's own curl frequently is
+	// not built with it, so such a proxy compressed for ncps alone.
+	allMutators := mutators
 
-	allMutators := append([]func(*http.Request){zstdMutator}, mutators...)
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdMutator := func(r *http.Request) {
+			r.Header.Set("Accept-Encoding", "zstd")
+		}
+
+		allMutators = append([]func(*http.Request){zstdMutator}, mutators...)
+	}
 
 	resp, err := c.doRequest(ctx, http.MethodGet, u, allMutators...)
 	if err != nil {
