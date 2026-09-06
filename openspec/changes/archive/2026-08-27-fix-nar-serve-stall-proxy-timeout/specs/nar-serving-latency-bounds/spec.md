@@ -11,7 +11,9 @@ and so slow storage is visible in logs and metrics instead of silent.
 A NAR request SHALL either begin emitting response body bytes, or terminate with an explicit
 error status, within a configured time-to-first-byte budget — regardless of how long the storage
 layer takes to answer a presence probe. The budget SHALL default to a value comfortably below the
-read timeout of a typical reverse proxy (60 s), and SHALL be configurable.
+read timeout of a typical reverse proxy (60 s), and SHALL be configurable. Configuring it to zero
+SHALL disable the bound entirely, restoring unbounded waiting; that is a deliberate operator
+rollback switch and the only case in which the bounds below do not apply.
 
 A NAR response that has already committed a `200` status and a `Content-Length` SHALL NOT be
 allowed to stall such that an intermediary aborts it mid-body; the truncated-success outcome is
@@ -34,6 +36,13 @@ the failure this requirement exists to prevent.
 - **THEN** the request MUST still resolve within approximately one budget, not one budget
   per probe
 - **AND** the total MUST NOT scale with the number of probes the read path happens to make
+
+#### Scenario: The bound is explicitly disabled
+
+- **WHEN** the probe bound is configured to zero
+- **THEN** probes SHALL wait without a bound, restoring the pre-change behaviour
+- **AND** this SHALL be treated as an explicit operator opt-out for rollback, not as a violation
+  of the bounded-latency requirements above
 
 #### Scenario: Fast storage is unaffected
 

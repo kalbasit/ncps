@@ -38,7 +38,7 @@ cancellation (modelling `os.Stat`), against a 250 ms configured bound.
 
 Verbatim RED output before the fix:
 
-```
+```text
 --- FAIL: TestGetNarBoundedTimeToFirstByte (10.01s)
     GetNar did not resolve within 10s while the storage probe blocked for 30s:
     a NAR request must have a bounded time-to-first-byte
@@ -49,7 +49,7 @@ Verbatim RED output before the fix:
 `TestStatProbeIsSingleFlighted` — 20 concurrent callers for the same NAR against a stalled
 store:
 
-```
+```text
 20 concurrent callers produced 1 backend probe(s)
 ```
 

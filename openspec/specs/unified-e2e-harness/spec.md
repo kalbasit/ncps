@@ -268,7 +268,8 @@ the path that failed in production: the NAR was present and every byte was corre
 latency was wrong.
 
 The scenario SHALL measure the interval between issuing the NAR request and receiving the first
-body byte, and SHALL fail when that interval exceeds a declared budget. The budget SHALL be far
+body byte, and SHALL fail unless that interval is strictly less than a declared budget, so a measurement
+exactly equal to the budget FAILS (the implementation compares with `<`). The budget SHALL be far
 below any per-request read timeout used by the harness client, so that a stall is caught by the
 assertion rather than by a client timeout.
 

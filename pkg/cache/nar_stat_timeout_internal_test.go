@@ -163,8 +163,10 @@ func TestGetNarBoundedTimeToFirstByte(t *testing.T) {
 	done := make(chan struct{})
 
 	var (
-		getErr error
-		rc     io.ReadCloser
+		getErr    error
+		readErr   error
+		rc        io.ReadCloser
+		firstByte time.Duration
 	)
 
 	start := time.Now()
@@ -173,6 +175,17 @@ func TestGetNarBoundedTimeToFirstByte(t *testing.T) {
 		defer close(done)
 
 		_, _, rc, getErr = c.GetNar(newContext(), narURL)
+		if getErr != nil || rc == nil {
+			return
+		}
+
+		// Time to FIRST BYTE, not time for GetNar to return. GetNar hands back a
+		// reader, and that reader's first Read can block independently of the call
+		// returning — so timing only the return would let a response that stalls on
+		// its first read pass a test named for time-to-first-byte.
+		buf := make([]byte, 1)
+		_, readErr = io.ReadFull(rc, buf)
+		firstByte = time.Since(start)
 	}()
 
 	select {
@@ -196,6 +209,11 @@ func TestGetNarBoundedTimeToFirstByte(t *testing.T) {
 	// Either bytes or a clean error is acceptable; a silent hang is not.
 	if getErr == nil {
 		require.NotNil(t, rc)
+		require.NoError(t, readErr, "the served body must be readable")
+		assert.Less(t, firstByte, budget,
+			"the FIRST BYTE must arrive within the budget, not merely the GetNar call returning")
+
+		t.Logf("first byte arrived in %s", firstByte)
 	}
 }
 
@@ -567,4 +585,130 @@ func TestRequestProbeBudgetIsCumulative(t *testing.T) {
 	// budget is per-probe rather than per-request.
 	assert.Less(t, elapsed, 2*statTimeout,
 		"a request must not accumulate multiple full probe timeouts")
+}
+
+// TestServedNarFirstByteIsPrompt exercises the first-byte path that
+// TestGetNarBoundedTimeToFirstByte cannot reach.
+//
+// When the probe times out, GetNar returns an error and there is no reader, so
+// the first-byte assertion there is dormant. This test serves a NAR for real and
+// times the first Read, so "time to first byte" is measured against actual bytes
+// rather than against GetNar merely returning.
+//
+// Scope note: this bounds the presence probe, which is what the change addresses.
+// A reader that stalls mid-body for some other reason (slow storage reads rather
+// than a slow presence probe) is a different source of latency and is deliberately
+// not claimed to be covered here.
+func TestServedNarFirstByteIsPrompt(t *testing.T) {
+	t.Parallel()
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore { return s })
+	c.SetStatTimeout(5 * time.Second)
+
+	narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: testdata.Nar1.NarCompression}
+	require.NoError(t, c.PutNar(newContext(), narURL,
+		io.NopCloser(strings.NewReader(testdata.Nar1.NarText))))
+
+	start := time.Now()
+
+	_, _, rc, err := c.GetNar(newContext(), narURL)
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+
+	defer rc.Close()
+
+	buf := make([]byte, 1)
+	_, err = io.ReadFull(rc, buf)
+	require.NoError(t, err, "the first byte must be readable")
+
+	firstByte := time.Since(start)
+	t.Logf("first byte of a served NAR arrived in %s", firstByte)
+
+	assert.Less(t, firstByte, 5*time.Second,
+		"a NAR present in storage must yield its first byte promptly")
+
+	rest, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, testdata.Nar1.NarText, string(buf)+string(rest),
+		"the served body must be intact, not merely prompt")
+}
+
+// concurrencyTrackingStore records the high-water mark of probes blocked inside
+// the backend at the same instant.
+type concurrencyTrackingStore struct {
+	storage.NarStore
+
+	delay   time.Duration
+	inFlite atomic.Int64
+	peak    atomic.Int64
+}
+
+func (s *concurrencyTrackingStore) StatNar(ctx context.Context, narURL nar.URL) (bool, error) {
+	cur := s.inFlite.Add(1)
+	for {
+		peak := s.peak.Load()
+		if cur <= peak || s.peak.CompareAndSwap(peak, cur) {
+			break
+		}
+	}
+
+	defer s.inFlite.Add(-1)
+
+	time.Sleep(s.delay) // uncancellable, like os.Stat
+
+	return s.NarStore.StatNar(ctx, narURL)
+}
+
+func (s *concurrencyTrackingStore) HasNar(ctx context.Context, narURL nar.URL) bool {
+	present, _ := s.StatNar(ctx, narURL)
+
+	return present
+}
+
+// TestStatProbeCapBoundsUniqueKeyBurst covers the case single-flight does NOT
+// help with: a burst of DISTINCT NAR hashes.
+//
+// Deduplication collapses concurrent probes for the *same* object, but a burst of
+// unique keys is one probe each, and on the local backend every one of those is a
+// blocked, uncancellable syscall holding an OS thread. maxInFlightStatProbes is
+// what bounds that, and this test is what proves the bound holds — without it the
+// cap was an untested assertion.
+func TestStatProbeCapBoundsUniqueKeyBurst(t *testing.T) {
+	t.Parallel()
+
+	const burst = maxInFlightStatProbes + 64
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore {
+		return &concurrencyTrackingStore{NarStore: s, delay: 2 * time.Second}
+	})
+	c.SetStatTimeout(200 * time.Millisecond)
+
+	store, ok := c.narStore.(*concurrencyTrackingStore)
+	require.True(t, ok)
+
+	var wg sync.WaitGroup
+
+	for i := range burst {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+
+			// Distinct hashes: single-flight cannot collapse these.
+			hash := testdata.Nar1.NarHash[:len(testdata.Nar1.NarHash)-3] +
+				string(rune('a'+i%26)) + string(rune('a'+(i/26)%26)) + string(rune('a'+(i/676)%26))
+
+			_, _ = c.statNarInStore(newContext(),
+				nar.URL{Hash: hash, Compression: nar.CompressionTypeXz})
+		}(i)
+	}
+
+	wg.Wait()
+
+	peak := store.peak.Load()
+	t.Logf("%d unique-key probes produced a peak of %d concurrently blocked backend probes (cap %d)",
+		burst, peak, maxInFlightStatProbes)
+
+	assert.LessOrEqual(t, peak, int64(maxInFlightStatProbes),
+		"concurrently blocked backend probes must never exceed the cap")
 }

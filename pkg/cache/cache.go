@@ -460,7 +460,7 @@ func init() {
 		"ncps_storage_stat_timeout_total",
 		metric.WithDescription(
 			"Counts storage presence probes abandoned without a determination, by reason "+
-				"(deadline, capacity).",
+				"(deadline, capacity, budget_exhausted).",
 		),
 		metric.WithUnit("{event}"),
 	)
