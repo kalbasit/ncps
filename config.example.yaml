@@ -133,6 +133,17 @@ cache:
   trusted-upload-keys: []
   #   - my-cache-1:abcdef0123456789...=
   storage:
+    # Maximum time the NAR read path waits on a storage presence probe before
+    # treating presence as undetermined (default: 5s). Keep it well below your
+    # reverse-proxy read timeout. The local backend's probe is an os.Stat, which
+    # bottoms out in an uncancellable fstatat(2): on a hard NFS mount a single one
+    # has been measured blocking ~57s, long enough for the proxy to abort the
+    # response mid-body and hand the client a 200 with a truncated body. 5s sits an
+    # order of magnitude above a healthy probe (8-300ms) and an order of magnitude
+    # below a 60s proxy timeout, so it fires only on genuine pathology.
+    # A timed-out probe is treated as undetermined, never as a cache miss, so it
+    # never becomes a spurious 404. Set to 0 to disable the bound (rollback).
+    stat-timeout: 5s
     # The local data path used for configuration and cache storage
     # Use this OR S3 storage (cache.storage.s3.bucket) - not both
     local: "/var/lib/ncps"
