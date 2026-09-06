@@ -23,7 +23,7 @@ None.
 ## Non-goals
 
 - **Does not** change the downstream/server side. Client-facing `Accept-Encoding` handling and transparent re-compression (`api-surface`, `architecture`) are untouched.
-- **Does not** change transparent decompression of a `Content-Encoding: zstd` response. An upstream that sends one *unsolicited* over a raw body is nonconforming and remains unsupported; this change removes the case where ncps itself invited the problem.
+- **Does not** change transparent decompression of a `Content-Encoding: zstd` response. Such a response is still decoded whether or not the system negotiated it — decoding a declared transfer encoding is correct regardless. What stays unsupported is narrower and is about the *decoded* body: if that body then fails to match the compression the narinfo declares, the system does not detect or repair the mismatch. This change removes the case where ncps itself invited that mismatch.
 - **Does not** revisit the narinfo `Compression:` resolution from #1470, which this depends on: `narURL.Compression` is only trustworthy because of it.
 - **Does not** add sniffing or heuristics to detect a lying upstream.
 

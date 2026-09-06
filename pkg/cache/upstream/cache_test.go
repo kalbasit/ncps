@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -806,7 +807,13 @@ func TestGetNarAcceptEncodingMatchesContentCompression(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var gotAcceptEncoding string
+			// Guarded: the handler runs on the server's goroutine, and doRequest
+			// may retry, so more than one handler invocation can overlap the
+			// test's read.
+			var (
+				mu                sync.Mutex
+				gotAcceptEncoding string
+			)
 
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/nix-cache-info") {
@@ -815,7 +822,9 @@ func TestGetNarAcceptEncodingMatchesContentCompression(t *testing.T) {
 					return
 				}
 
+				mu.Lock()
 				gotAcceptEncoding = r.Header.Get("Accept-Encoding")
+				mu.Unlock()
 
 				_, _ = io.WriteString(w, "some-nar-bytes")
 			}))
@@ -837,11 +846,15 @@ func TestGetNarAcceptEncodingMatchesContentCompression(t *testing.T) {
 				_ = resp.Body.Close()
 			})
 
+			mu.Lock()
+			sentAcceptEncoding := gotAcceptEncoding
+			mu.Unlock()
+
 			if tt.wantZstdReq {
-				assert.Contains(t, gotAcceptEncoding, "zstd",
+				assert.Contains(t, sentAcceptEncoding, "zstd",
 					"an uncompressed NAR should still negotiate transport zstd")
 			} else {
-				assert.NotContains(t, gotAcceptEncoding, "zstd",
+				assert.NotContains(t, sentAcceptEncoding, "zstd",
 					"a NAR whose content is already %s must not request transport zstd", tt.compression)
 			}
 		})
@@ -869,7 +882,10 @@ func TestGetNarDecompressesUnsolicitedContentEncoding(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, zw.Close())
 
-	var gotAcceptEncoding string
+	var (
+		mu                sync.Mutex
+		gotAcceptEncoding string
+	)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/nix-cache-info") {
@@ -881,7 +897,9 @@ func TestGetNarDecompressesUnsolicitedContentEncoding(t *testing.T) {
 		// Unsolicited: the NAR below is declared zstd, so ncps does not negotiate
 		// transport zstd, yet this upstream applies it anyway. Recorded here and
 		// asserted on the test goroutine — testify must not FailNow off it.
+		mu.Lock()
 		gotAcceptEncoding = r.Header.Get("Accept-Encoding")
+		mu.Unlock()
 
 		w.Header().Set("Content-Encoding", "zstd")
 		_, _ = w.Write(compressed.Bytes())
@@ -904,7 +922,11 @@ func TestGetNarDecompressesUnsolicitedContentEncoding(t *testing.T) {
 	got, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	assert.NotContains(t, gotAcceptEncoding, "zstd",
+	mu.Lock()
+	sentAcceptEncoding := gotAcceptEncoding
+	mu.Unlock()
+
+	assert.NotContains(t, sentAcceptEncoding, "zstd",
 		"precondition: a zstd NAR must not have negotiated transport zstd")
 	assert.Equal(t, body, string(got),
 		"an unsolicited Content-Encoding: zstd must still be transparently decompressed")
