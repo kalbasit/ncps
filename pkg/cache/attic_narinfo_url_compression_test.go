@@ -33,14 +33,15 @@ import (
 //	file_hash:   None                       — attic leaves both unset, marked
 //	file_size:   None                          unfinished in its own source
 //
-// ncps derives a NAR's compression exclusively from the URL's file extension
-// (nar.ParseUpstreamURL -> parseURLParts), so it reads `none` here and never
-// reconciles that against the narinfo's `Compression:` header. Because the
-// 32-char store path hash fails ValidateHash, the URL takes the OPAQUE branch of
-// pullNarInfo's normalization switch (cache.go:4368), whose comment claims it is
-// "preserving compression" — but it preserves the URL-derived `none`, leaving
-// narInfo.Compression at "zstd". storeInDatabase then re-parses that rewritten
-// URL to build the nar_file row, so the row is written with compression=none.
+// The bug this pins (fixed; the test guards against its return): ncps used to
+// derive a NAR's compression exclusively from the URL's file extension, so it
+// read `none` here and never reconciled that against the narinfo's
+// `Compression:` header. Because the 32-char store path hash fails ValidateHash,
+// the URL takes the opaque branch of pullNarInfo's normalization switch, which
+// then preserved the URL-derived `none` while leaving narInfo.Compression at
+// "zstd"; storeInDatabase re-parsed that rewritten URL to build the nar_file row,
+// writing it with compression=none. nar.ParseUpstreamURL now takes the declared
+// compression and applies it when the URL carries no extension.
 //
 // The user-visible contract this breaks: the bytes ncps serves for the URL in
 // its OWN narinfo must decode under the Compression that same narinfo declares.
@@ -60,9 +61,11 @@ import (
 //     encoding on ingest (upstream/cache.go:598) and is left holding the RAW
 //     NAR, which it then serves while still advertising Compression: zstd.
 //
-// Only the second variant produces the reporter's error text, so it is the
-// discriminator: it tells us whether the reporter's attic sits behind something
-// that moves the zstd from the body to the transport.
+// The reporter of #1470 turned out to be on the CONTENT-level variant, and the
+// compression-resolution fix cured them — so the transport-level variant was
+// never their failure mode. It is kept here because the gap it describes is real
+// and code-verified, not because anything is known to hit it. See the skip
+// below.
 func TestAtticNarInfoURLWithoutCompressionExtension(t *testing.T) {
 	t.Parallel()
 
@@ -79,23 +82,32 @@ func TestAtticNarInfoURLWithoutCompressionExtension(t *testing.T) {
 			t.Parallel()
 
 			if tt.transportEncoding {
-				// NOT a regression in the compression-resolution fix, and not a
-				// flake: this subtest is the KNOWN-OPEN half of #1470, deliberately
-				// left failing-by-design and quarantined here so it does not red-line
-				// CI for everyone.
+				// Skipped because ncps genuinely fails this case, not because the
+				// test is flaky or wrong. It is a standing description of an open
+				// gap; no fix is planned or in flight, so do not read this as
+				// waiting on anything.
 				//
-				// Resolving the compression makes the labels agree, but it cannot
-				// make the bytes true: upstream.GetNar unconditionally sends
+				// The gap: upstream.GetNar unconditionally sends
 				// Accept-Encoding: zstd and transparently strips any
-				// Content-Encoding: zstd it gets back (upstream/cache.go), so an
-				// upstream applying zstd at the TRANSPORT level over an uncompressed
-				// body still leaves ncps holding a raw NAR — now confidently stored
-				// under a .nar.zst key. Fixing that means not requesting transport
-				// zstd for content the narinfo already declares compressed, which is
-				// a change against a different package and ships separately.
+				// Content-Encoding: zstd it gets back. An upstream that applies zstd
+				// at the TRANSPORT level over an uncompressed body therefore leaves
+				// ncps holding a raw NAR, which it stores and serves under a
+				// .nar.zst key while the narinfo advertises Compression: zstd —
+				// nix then reports "input compression not recognized". Resolving the
+				// declared compression (which this file's other subtest covers)
+				// makes the labels agree but cannot make those bytes true.
 				//
-				// Un-skip in that follow-up change; it should pass with no edit here.
-				t.Skip("known open: transport-level zstd — follow-up change, see #1470")
+				// Such an upstream is arguably nonconforming and breaks plain nix
+				// too (NixOS/nix#10275). What makes it ncps-specific is that ncps
+				// always advertises zstd while nix's curl often is not built with
+				// it, so a proxy may compress for ncps alone. No real upstream has
+				// been observed doing this.
+				//
+				// To close it: stop requesting transport zstd for content the
+				// narinfo already declares compressed (a change in
+				// pkg/cache/upstream). This subtest should then pass with no edit
+				// here, and the skip can be deleted.
+				t.Skip("open gap, no fix planned: upstream states zstd via Content-Encoding over a raw body")
 			}
 
 			const (
