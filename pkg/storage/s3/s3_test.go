@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -89,8 +90,14 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
-			// HEAD succeeds so Stat() passes; GET (the body fetch) returns a non-retryable 403
-			// so io.ReadAll trips the "error reading secret key" wrap.
+			// HEAD succeeds and advertises a non-empty object so Stat() passes and
+			// the SDK goes on to fetch the body; the GET then returns a
+			// non-retryable 403 so io.ReadAll trips the "error reading secret key"
+			// wrap.
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return s3HeadOKResponse(len("some-key"))
+			}
+
 			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "config/cache.key") {
 				return s3ErrorResponse("access denied")
 			}
@@ -365,11 +372,32 @@ func s3OKResponse(body string) (*http.Response, error) {
 	header := make(http.Header)
 	header.Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
 
+	// Content-Length is not optional: minio-go parses the object size out of
+	// this header and falls back to -1 when it is absent, which makes
+	// Object.Stat() report io.EOF instead of the object info.
+	header.Set("Content-Length", strconv.Itoa(len(body)))
+
 	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     header,
-		Body:       io.NopCloser(strings.NewReader(body)),
+		StatusCode:    http.StatusOK,
+		Header:        header,
+		ContentLength: int64(len(body)),
+		Body:          io.NopCloser(strings.NewReader(body)),
 	}, nil
+}
+
+// s3HeadOKResponse mimics a successful S3 HEAD reply for an object of the given
+// size: the size travels in the headers while the body stays empty, which is
+// what minio-go needs in order to move on to fetching the object body.
+func s3HeadOKResponse(size int) (*http.Response, error) {
+	resp, err := s3OKResponse("")
+	if err != nil {
+		return nil, err
+	}
+
+	resp.Header.Set("Content-Length", strconv.Itoa(size))
+	resp.ContentLength = int64(size)
+
+	return resp, nil
 }
 
 func TestBucketAccess_ErrorPaths(t *testing.T) {
