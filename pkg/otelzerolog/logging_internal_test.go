@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestGetKeyValueForMap(t *testing.T) {
@@ -15,7 +15,7 @@ func TestGetKeyValueForMap(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.KeyValue{log.Bool("a", true)},
+			[]attribute.KeyValue{attribute.Bool("a", true)},
 			getKeyValueForMap(map[string]any{"a": true}),
 		)
 	})
@@ -25,8 +25,8 @@ func TestGetKeyValueForMap(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.KeyValue{
-				log.String("a", "test"),
+			[]attribute.KeyValue{
+				attribute.String("a", "test"),
 			},
 			getKeyValueForMap(map[string]any{
 				"a": "test",
@@ -39,8 +39,8 @@ func TestGetKeyValueForMap(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.KeyValue{
-				log.Float64("a", 10.5),
+			[]attribute.KeyValue{
+				attribute.Float64("a", 10.5),
 			},
 			getKeyValueForMap(map[string]any{
 				"a": 10.5,
@@ -56,12 +56,14 @@ func TestGetKeyValueForMap(t *testing.T) {
 		})
 
 		if assert.Len(t, kvs, 1) {
-			assert.True(t, kvs[0].Equal(
-				log.Slice(
+			assert.Equal(
+				t,
+				attribute.Slice(
 					"a",
-					log.StringValue("b"),
+					attribute.StringValue("b"),
 				),
-			))
+				kvs[0],
+			)
 		}
 	})
 
@@ -75,12 +77,14 @@ func TestGetKeyValueForMap(t *testing.T) {
 		})
 
 		if assert.Len(t, kvs, 1) {
-			assert.True(t, kvs[0].Equal(
-				log.Map(
+			assert.Equal(
+				t,
+				attribute.Map(
 					"a",
-					log.String("b", "c"),
+					attribute.String("b", "c"),
 				),
-			))
+				kvs[0],
+			)
 		}
 	})
 }
@@ -93,9 +97,9 @@ func TestGetValuesForSlice(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.Value{
-				log.BoolValue(true),
-				log.BoolValue(false),
+			[]attribute.Value{
+				attribute.BoolValue(true),
+				attribute.BoolValue(false),
 			},
 			getValuesForSlice([]any{true, false}),
 		)
@@ -106,9 +110,9 @@ func TestGetValuesForSlice(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.Value{
-				log.Float64Value(10.5),
-				log.Float64Value(20.5),
+			[]attribute.Value{
+				attribute.Float64Value(10.5),
+				attribute.Float64Value(20.5),
 			},
 			getValuesForSlice([]any{10.5, 20.5}),
 		)
@@ -119,9 +123,9 @@ func TestGetValuesForSlice(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.Value{
-				log.StringValue("a"),
-				log.StringValue("b"),
+			[]attribute.Value{
+				attribute.StringValue("a"),
+				attribute.StringValue("b"),
 			},
 			getValuesForSlice([]any{"a", "b"}),
 		)
@@ -132,12 +136,12 @@ func TestGetValuesForSlice(t *testing.T) {
 
 		assert.Equal(
 			t,
-			[]log.Value{
-				log.MapValue(
-					log.String("a", "c"),
+			[]attribute.Value{
+				attribute.MapValue(
+					attribute.String("a", "c"),
 				),
-				log.MapValue(
-					log.Bool("b", true),
+				attribute.MapValue(
+					attribute.Bool("b", true),
 				),
 			},
 			getValuesForSlice([]any{

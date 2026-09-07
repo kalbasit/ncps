@@ -752,7 +752,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		record := log.Record{}
 		record.SetTimestamp(time.Now())
 		record.SetSeverity(log.SeverityInfo)
-		record.SetBody(log.StringValue("NCPS Started"))
+		record.SetBody(attribute.StringValue("NCPS Started"))
 
 		analyticsReporter.GetLogger().Emit(ctx, record)
 
