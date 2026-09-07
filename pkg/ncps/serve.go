@@ -28,7 +28,7 @@ import (
 	s3config "github.com/kalbasit/ncps/pkg/s3"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	storageS3 "github.com/kalbasit/ncps/pkg/storage/s3"
-	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	netpprof "net/http/pprof"
 
 	"github.com/kalbasit/ncps/pkg/analytics"
@@ -752,7 +752,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		record := log.Record{}
 		record.SetTimestamp(time.Now())
 		record.SetSeverity(log.SeverityInfo)
-		record.SetBody(log.StringValue("NCPS Started"))
+		record.SetBody(attribute.StringValue("NCPS Started"))
 
 		analyticsReporter.GetLogger().Emit(ctx, record)
 

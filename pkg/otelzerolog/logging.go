@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
 )
@@ -50,7 +51,7 @@ func (w *OtelWriter) Write(p []byte) (n int, err error) {
 	}
 
 	if msg, ok := logEntry["message"].(string); ok {
-		rec.SetBody(log.StringValue(msg))
+		rec.SetBody(attribute.StringValue(msg))
 
 		delete(logEntry, "message")
 	}
@@ -94,25 +95,25 @@ func convertLevel(level zerolog.Level) log.Severity {
 	}
 }
 
-func getKeyValueForMap(m map[string]any) []log.KeyValue {
-	kvs := make([]log.KeyValue, 0, len(m))
+func getKeyValueForMap(m map[string]any) []attribute.KeyValue {
+	kvs := make([]attribute.KeyValue, 0, len(m))
 
 	for k, v := range m {
 		switch val := v.(type) {
 		case bool:
-			kvs = append(kvs, log.Bool(k, val))
+			kvs = append(kvs, attribute.Bool(k, val))
 		case float64:
 			if ival := int64(val); float64(ival) == val {
-				kvs = append(kvs, log.Int64(k, ival))
+				kvs = append(kvs, attribute.Int64(k, ival))
 			} else {
-				kvs = append(kvs, log.Float64(k, val))
+				kvs = append(kvs, attribute.Float64(k, val))
 			}
 		case string:
-			kvs = append(kvs, log.String(k, val))
+			kvs = append(kvs, attribute.String(k, val))
 		case []any:
-			kvs = append(kvs, log.Slice(k, getValuesForSlice(val)...))
+			kvs = append(kvs, attribute.Slice(k, getValuesForSlice(val)...))
 		case map[string]any:
-			kvs = append(kvs, log.Map(k, getKeyValueForMap(val)...))
+			kvs = append(kvs, attribute.Map(k, getKeyValueForMap(val)...))
 		default:
 			panic(fmt.Sprintf("Typeof(%q) => %T: not known", k, v))
 		}
@@ -121,25 +122,25 @@ func getKeyValueForMap(m map[string]any) []log.KeyValue {
 	return kvs
 }
 
-func getValuesForSlice(vals []any) []log.Value {
-	var vs []log.Value
+func getValuesForSlice(vals []any) []attribute.Value {
+	var vs []attribute.Value
 
 	for _, v := range vals {
 		switch val := v.(type) {
 		case bool:
-			vs = append(vs, log.BoolValue(val))
+			vs = append(vs, attribute.BoolValue(val))
 		case float64:
 			if ival := int64(val); float64(ival) == val {
-				vs = append(vs, log.Int64Value(ival))
+				vs = append(vs, attribute.Int64Value(ival))
 			} else {
-				vs = append(vs, log.Float64Value(val))
+				vs = append(vs, attribute.Float64Value(val))
 			}
 		case string:
-			vs = append(vs, log.StringValue(val))
+			vs = append(vs, attribute.StringValue(val))
 		case map[string]any:
-			vs = append(vs, log.MapValue(getKeyValueForMap(val)...))
+			vs = append(vs, attribute.MapValue(getKeyValueForMap(val)...))
 		case []any:
-			vs = append(vs, log.SliceValue(getValuesForSlice(val)...))
+			vs = append(vs, attribute.SliceValue(getValuesForSlice(val)...))
 		default:
 			panic(fmt.Sprintf("Typeof(%#v) => %T: not known", v, v))
 		}

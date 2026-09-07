@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
@@ -144,10 +145,10 @@ func (r *reporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
 	record.SetTimestamp(time.Now())
 	record.SetSeverity(log.SeverityFatal)
 	record.SetSeverityText("FATAL")
-	record.SetBody(log.StringValue(panicLogMessage))
+	record.SetBody(attribute.StringValue(panicLogMessage))
 	record.AddAttributes(
-		log.String("panic.value", fmt.Sprintf("%v", rvr)),
-		log.String("panic.stack", string(stack)),
+		attribute.String("panic.value", fmt.Sprintf("%v", rvr)),
+		attribute.String("panic.stack", string(stack)),
 	)
 
 	r.logger.Emit(ctx, record)
