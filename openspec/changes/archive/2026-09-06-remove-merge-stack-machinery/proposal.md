@@ -6,7 +6,7 @@ GitHub's native stacked pull requests replaced the repository's bespoke `merge-s
 
 - Delete `.github/workflows/merge-stack-start.yml` — the `labeled` trigger that called `kalbasit/stackmerge-action/start`.
 - Delete `.github/workflows/merge-stack-continue.yml` — the `closed` trigger that called `kalbasit/stackmerge-action/continue`.
-- Drop the repository's dependency on `kalbasit/stackmerge-action` (no other file references it).
+- Drop the repository's dependency on `kalbasit/stackmerge-action` (no other active file references it; archived change records quote the name as history).
 - The `merge-stack` GitHub label becomes inert. Deleting the label itself is a repository-settings action outside this change.
 
 Not **BREAKING** for any consumer of ncps: neither workflow ships in a release artifact, affects the binary, or is referenced by another workflow.
@@ -15,7 +15,7 @@ Evidence these are dead:
 
 - Zero of the last 30 merged pull requests carried the `merge-stack` label.
 - Every recent run of both workflows concluded `skipped`.
-- `grep -rIn 'merge-stack\|stackmerge'` matches only the two files being deleted.
+- `grep -rIn --exclude-dir=archive 'merge-stack\|stackmerge'` matches only the two files being deleted. The archive is excluded because archived records quote these strings as history rather than referencing live automation.
 
 ## Capabilities
 
