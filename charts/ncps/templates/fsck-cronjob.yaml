@@ -26,7 +26,7 @@ spec:
             {{- include "ncps.selectorLabels" . | nindent 12 }}
             app.kubernetes.io/component: fsck
         spec:
-          restartPolicy: OnFailure
+          restartPolicy: Never
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
