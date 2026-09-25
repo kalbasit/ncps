@@ -57,7 +57,7 @@ jobs:
   # They run their own paths-filter because the reusable workflow doesn't (currently)
   # expose its filter outputs back to the caller.
   filter:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       ent: ${{ steps.filter.outputs.ent }}
@@ -81,7 +81,7 @@ jobs:
     # Vendor-hash regeneration moved to gh-actions/generate.yml via the shared
     # workflow's `languages.go.targets`. This job now only handles Ent codegen.
     if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.ent == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -106,7 +106,7 @@ jobs:
       pull-requests: write
     needs: filter
     if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.docs == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -138,7 +138,7 @@ jobs:
             })
   # ---- Final gate over the reusable workflow + sibling jobs ------------------------
   ci:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: always()
     needs:
       - shared
