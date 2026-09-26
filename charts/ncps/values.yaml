@@ -565,8 +565,10 @@ jobDefaults:
   # restartPolicy for the job's pod spec. "Never" is strongly recommended:
   # under "OnFailure" the Job controller deletes the pod as soon as the backoff
   # limit is reached, which destroys the logs of the run that failed. With
-  # "Never" every attempt gets its own pod and failed pods survive until
-  # ttlSecondsAfterFinished removes them.
+  # "Never" every attempt gets its own pod. A plain Job's failed pod then
+  # survives until ttlSecondsAfterFinished removes it; under a CronJob the
+  # controller's failedJobsHistoryLimit (Kubernetes default: 1) can remove an
+  # older failed Job, and its pods, before that TTL expires.
   #
   # Note that the two policies also count attempts differently: at
   # backoffLimit: N, "OnFailure" yields N complete attempts while "Never"
@@ -616,8 +618,9 @@ migration:
 
     # TTL after job finishes (in seconds). null inherits
     # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
-    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
-    # finished jobs indefinitely.
+    # it finishes. The field is omitted -- which is what retains finished jobs
+    # indefinitely -- only when this value and jobDefaults.ttlSecondsAfterFinished
+    # are BOTH null.
     ttlSecondsAfterFinished: 300
 
     # Annotations for the job
@@ -679,8 +682,9 @@ fsck:
 
     # TTL after job finishes (in seconds). null inherits
     # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
-    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
-    # finished jobs indefinitely.
+    # it finishes. The field is omitted -- which is what retains finished jobs
+    # indefinitely -- only when this value and jobDefaults.ttlSecondsAfterFinished
+    # are BOTH null.
     ttlSecondsAfterFinished: null
 
     # Annotations for the job
@@ -735,8 +739,9 @@ migrateChunksToNar:
 
     # TTL after job finishes (in seconds). null inherits
     # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
-    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
-    # finished jobs indefinitely.
+    # it finishes. The field is omitted -- which is what retains finished jobs
+    # indefinitely -- only when this value and jobDefaults.ttlSecondsAfterFinished
+    # are BOTH null.
     ttlSecondsAfterFinished: null
 
     # Annotations for the job
@@ -779,8 +784,9 @@ migrateNarToChunks:
 
     # TTL after job finishes (in seconds). null inherits
     # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
-    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
-    # finished jobs indefinitely.
+    # it finishes. The field is omitted -- which is what retains finished jobs
+    # indefinitely -- only when this value and jobDefaults.ttlSecondsAfterFinished
+    # are BOTH null.
     ttlSecondsAfterFinished: null
 
     # Annotations for the job

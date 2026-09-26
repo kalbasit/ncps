@@ -367,6 +367,9 @@ applies.
 > [!NOTE]
 > `restartPolicy: Never` is strongly recommended. Under `OnFailure` the Job controller deletes the
 > pod as soon as the backoff limit is reached, which destroys the logs of the run that failed.
+> With `Never`, a plain Job's failed pod survives until `ttlSecondsAfterFinished` removes it. Under
+> a CronJob such as fsck, the controller's `failedJobsHistoryLimit` (Kubernetes default: `1`) can
+> remove an older failed Job, and its pods, before that TTL expires.
 >
 > The two policies also count attempts differently: at `backoffLimit: N`, `OnFailure` yields N
 > complete attempts while `Never` yields N+1, because the Job controller compares restart counts
@@ -375,7 +378,11 @@ applies.
 
 > [!NOTE]
 > Setting `ttlSecondsAfterFinished` to `0` makes a finished job eligible for deletion
-> **immediately**. To retain finished jobs indefinitely, set the key to `null`.
+> **immediately**. Retaining finished jobs indefinitely requires the field to be omitted, which
+> happens only when the per-job value **and** `jobDefaults.ttlSecondsAfterFinished` are both
+> `null` — clearing only one level still leaves the other's value in effect. Note that
+> `migration.job.ttlSecondsAfterFinished` ships with an explicit `300`, so it must be cleared
+> too.
 
 ### Database Migration
 

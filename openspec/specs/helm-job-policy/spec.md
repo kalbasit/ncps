@@ -13,7 +13,10 @@ run is retained for inspection rather than deleted.
 Every Job and CronJob rendered by the chart MUST default to `restartPolicy: Never` in its pod spec.
 Under `restartPolicy: OnFailure` the Job controller deletes the pod as soon as the backoff limit is
 reached, which destroys the logs of the run that failed; `Never` causes each attempt to land in its
-own pod, and failed pods survive until the job's TTL removes them.
+own pod. For a plain Job, a failed pod then survives until the Job's TTL removes it. Under a
+CronJob, the controller's `failedJobsHistoryLimit` (Kubernetes default: 1) can remove an older
+failed Job, and its pods, before that TTL expires, so retention there is bounded by the history
+limit as well as the TTL.
 
 #### Scenario: Migration job renders restartPolicy Never
 
