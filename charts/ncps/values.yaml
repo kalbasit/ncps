@@ -556,7 +556,11 @@ sidecars: []
 # independently. Resolution order for each key is:
 #   1. the per-job value (<job>.job.<key>) when it is not null
 #   2. this jobDefaults value when it is not null
-#   3. otherwise the key is omitted entirely and Kubernetes' own default applies
+#   3. for backoffLimit and ttlSecondsAfterFinished, the key is omitted entirely
+#      and Kubernetes' own default applies. restartPolicy is the exception: it
+#      is always rendered, falling back to "Never", because a pod spec with no
+#      restartPolicy defaults to "Always", which the API server rejects for a
+#      Job.
 #
 # Because a per-job null means "inherit from here", omitting a key for exactly
 # one job is expressed by setting the key to null here and giving the other jobs
@@ -569,6 +573,9 @@ jobDefaults:
   # survives until ttlSecondsAfterFinished removes it; under a CronJob,
   # fsck.job.failedJobsHistoryLimit also caps how many failed Jobs are kept,
   # and whichever of the two fires first wins.
+  #
+  # Unlike the other two keys, this one is never omitted: setting it to null
+  # here and on every job renders "Never" rather than dropping the field.
   #
   # Note that the two policies also count attempts differently: at
   # backoffLimit: N, "OnFailure" yields N complete attempts while "Never"

@@ -349,3 +349,15 @@ tests:
       - equal:
           path: spec.successfulJobsHistoryLimit
           value: 0
+
+  - it: restartPolicy falls back to Never when both levels are null
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.restartPolicy: null
+      fsck.job.restartPolicy: null
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: "Never"

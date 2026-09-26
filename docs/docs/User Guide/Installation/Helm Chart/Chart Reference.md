@@ -355,8 +355,10 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 These defaults apply to every Job and CronJob the chart renders (migration, fsck,
 migrate-chunks-to-nar, migrate-nar-to-chunks). Each job's own `job:` block can override any
 of them independently. Resolution order per key is: the per-job value when non-null, then the
-`jobDefaults` value when non-null, otherwise the field is omitted and the Kubernetes default
-applies.
+`jobDefaults` value when non-null. If both are null, `backoffLimit` and `ttlSecondsAfterFinished`
+are omitted so the Kubernetes default applies. `restartPolicy` is the exception — it is always
+rendered, falling back to `Never`, because a pod spec with no `restartPolicy` defaults to `Always`,
+which the API server rejects for a Job.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
