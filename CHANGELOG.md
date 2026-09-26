@@ -13,9 +13,12 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `ttlSecondsAfterFinished` to every Job and CronJob the chart renders
   (`migration`, `fsck`, `migrateChunksToNar`, `migrateNarToChunks`), and each
   per-job `job:` block can override any of the three independently. Resolution
-  is per-job value, then `jobDefaults`, then the field is omitted so the
-  Kubernetes default applies. All four templates resolve through one shared
-  helper, so the rules cannot drift apart. Previously `restartPolicy` was
+  is per-job value, then `jobDefaults`; if both are null, `backoffLimit` and
+  `ttlSecondsAfterFinished` are omitted so the Kubernetes default applies.
+  `restartPolicy` is the exception — it is always rendered, falling back to
+  `Never`, because a pod spec with no `restartPolicy` defaults to `Always`,
+  which the API server rejects for a Job. All four templates resolve through one
+  shared helper, so the rules cannot drift apart. Previously `restartPolicy` was
   hardcoded and the retry/cleanup knobs were duplicated per job with no shared
   default, so changing them meant patching the chart. Shipped defaults are
   chosen so the rendered `backoffLimit`/`ttlSecondsAfterFinished` output is
