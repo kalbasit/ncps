@@ -17,6 +17,11 @@ pkgs: with pkgs; [
   redis
   skopeo
   pre-commit
-  kubernetes-helm
-  kubernetes-helmPlugins.helm-unittest
+  # helm wrapped with the helm-unittest plugin. Listing kubernetes-helm and the
+  # plugin as two independent packages does NOT register the plugin: helm
+  # discovers plugins through HELM_PLUGINS, so a bare plugin on PATH leaves
+  # `helm unittest` reporting `unknown command "unittest"`. wrapHelm sets
+  # HELM_PLUGINS for us, which is what makes `helm unittest charts/ncps`
+  # reproduce the helm-unittest-check result locally.
+  (wrapHelm kubernetes-helm { plugins = [ kubernetes-helmPlugins.helm-unittest ]; })
 ]

@@ -304,3 +304,59 @@ Return the temporary volume claim template configuration
       {{- toYaml . | nindent 6 }}
     {{- end }}
 {{- end -}}
+
+{{/*
+Resolve one job execution-policy key for a Job or CronJob.
+
+Takes a dict with:
+  ctx - the root context (for .Values.jobDefaults)
+  job - the per-job values dict (e.g. .Values.fsck.job)
+  key - the key to resolve ("restartPolicy", "backoffLimit", ...)
+
+Precedence is per-job value, then jobDefaults value, then empty (caller omits
+the field). The null test is `kindIs "invalid"` and NOT `coalesce`/truthiness:
+both sprig's coalesce and Go template truthiness treat 0 as empty, which would
+silently discard a deliberate `backoffLimit: 0` or `ttlSecondsAfterFinished: 0`
+and fall through to the global default. Zero is meaningful for both keys, so
+"not set" must be distinguished from "set to zero".
+*/}}
+{{- define "ncps.job.policyValue" -}}
+{{- $job := .job | default dict -}}
+{{- $defaults := .ctx.Values.jobDefaults | default dict -}}
+{{- $perJob := index $job .key -}}
+{{- $global := index $defaults .key -}}
+{{- if not (kindIs "invalid" $perJob) -}}
+{{- $perJob -}}
+{{- else if not (kindIs "invalid" $global) -}}
+{{- $global -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolve a job's restartPolicy. Takes a dict with ctx and job.
+
+Unlike the other two policy keys this one always renders: a pod spec with no
+restartPolicy defaults to "Always", which the API server rejects for a Job, so
+there is no valid "omit it" case. "Never" is the fallback when neither the
+per-job value nor jobDefaults supplies one.
+*/}}
+{{- define "ncps.job.restartPolicy" -}}
+{{- $value := include "ncps.job.policyValue" (dict "ctx" .ctx "job" .job "key" "restartPolicy") -}}
+{{- $value | default "Never" -}}
+{{- end -}}
+
+{{/*
+Resolve a job's backoffLimit. Takes a dict with ctx and job.
+Renders empty when unset at both levels, so the caller omits the field.
+*/}}
+{{- define "ncps.job.backoffLimit" -}}
+{{- include "ncps.job.policyValue" (dict "ctx" .ctx "job" .job "key" "backoffLimit") -}}
+{{- end -}}
+
+{{/*
+Resolve a job's ttlSecondsAfterFinished. Takes a dict with ctx and job.
+Renders empty when unset at both levels, so the caller omits the field.
+*/}}
+{{- define "ncps.job.ttlSecondsAfterFinished" -}}
+{{- include "ncps.job.policyValue" (dict "ctx" .ctx "job" .job "key" "ttlSecondsAfterFinished") -}}
+{{- end -}}

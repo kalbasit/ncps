@@ -1,0 +1,363 @@
+suite: test job policy resolution
+templates:
+  - migration-job.yaml
+  - fsck-cronjob.yaml
+  - migrate-chunks-to-nar-job.yaml
+  - migrate-nar-to-chunks-job.yaml
+  - configmap.yaml
+  - secret.yaml
+  - secret-signing-key.yaml
+tests:
+  # ------------------------------------------------------------------
+  # Requirement: Failed job pods are retained for debugging
+  # ------------------------------------------------------------------
+  - it: migration job renders restartPolicy Never
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: "Never"
+
+  - it: migrate-chunks-to-nar job renders restartPolicy Never
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: "Never"
+
+  - it: migrate-nar-to-chunks job renders restartPolicy Never
+    template: migrate-nar-to-chunks-job.yaml
+    set:
+      migrateNarToChunks.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: "Never"
+
+  - it: fsck cronjob renders restartPolicy Never
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: "Never"
+
+  - it: restartPolicy is overridable per job
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.restartPolicy: OnFailure
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: "OnFailure"
+
+  # ------------------------------------------------------------------
+  # Requirement: Global job defaults with independent per-job override
+  # ------------------------------------------------------------------
+  - it: global backoffLimit default applies when no per-job override
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.backoffLimit: 5
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 5
+
+  - it: per-job backoffLimit override wins over the global default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.backoffLimit: 5
+      fsck.job.backoffLimit: 2
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 2
+
+  - it: one job's ttl override does not leak to another job
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+      jobDefaults.ttlSecondsAfterFinished: 1800
+      migration.job.ttlSecondsAfterFinished: 60
+    asserts:
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 60
+
+  - it: the other job keeps the global ttl default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.ttlSecondsAfterFinished: 1800
+      migration.job.ttlSecondsAfterFinished: 60
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 1800
+
+  - it: overriding one key leaves the other on its global default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.backoffLimit: 4
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 4
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 3600
+
+  # ------------------------------------------------------------------
+  # Requirement: A null at both levels omits the field
+  # ------------------------------------------------------------------
+  - it: null at both levels omits backoffLimit on a cronjob
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.backoffLimit: null
+      fsck.job.backoffLimit: null
+    asserts:
+      - isNull:
+          path: spec.jobTemplate.spec.backoffLimit
+
+  - it: null at both levels omits backoffLimit on the migration job
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+      jobDefaults.backoffLimit: null
+      migration.job.backoffLimit: null
+    asserts:
+      - isNull:
+          path: spec.backoffLimit
+      - notMatchRegex:
+          path: spec.template.spec.restartPolicy
+          pattern: "no value"
+
+  - it: null at both levels omits ttlSecondsAfterFinished on the migration job
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+      jobDefaults.ttlSecondsAfterFinished: null
+      migration.job.ttlSecondsAfterFinished: null
+    asserts:
+      - isNull:
+          path: spec.ttlSecondsAfterFinished
+
+  # ------------------------------------------------------------------
+  # Requirement: An explicit zero is honored, not dropped
+  # ------------------------------------------------------------------
+  - it: explicit zero ttl is rendered on the migration job
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+      migration.job.ttlSecondsAfterFinished: 0
+    asserts:
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 0
+
+  - it: explicit zero ttl is rendered on the fsck cronjob
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.ttlSecondsAfterFinished: 0
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 0
+
+  - it: explicit zero global backoffLimit is rendered
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.backoffLimit: 0
+      fsck.job.backoffLimit: null
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 0
+
+  # ------------------------------------------------------------------
+  # Requirement: Shipped defaults preserve the current rendered values
+  # ------------------------------------------------------------------
+  - it: migration job keeps backoffLimit 3 and ttl 300 by default
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 300
+
+  - it: fsck cronjob keeps backoffLimit 1 and ttl 3600 by default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 1
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 3600
+
+  - it: migrate-chunks-to-nar job keeps backoffLimit 1 and ttl 3600 by default
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 1
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 3600
+
+  - it: migrate-nar-to-chunks job keeps backoffLimit 1 and ttl 3600 by default
+    template: migrate-nar-to-chunks-job.yaml
+    set:
+      migrateNarToChunks.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 1
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 3600
+
+  # ------------------------------------------------------------------
+  # Requirement: CronJob history limits are operator-configurable
+  # ------------------------------------------------------------------
+  - it: fsck cronjob retains more than one failed run by default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 3
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 3
+
+  - it: history limits are overridable
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.failedJobsHistoryLimit: 10
+    asserts:
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 10
+
+  - it: null history limits omit the fields
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.failedJobsHistoryLimit: null
+      fsck.job.successfulJobsHistoryLimit: null
+    asserts:
+      - isNull:
+          path: spec.failedJobsHistoryLimit
+      - isNull:
+          path: spec.successfulJobsHistoryLimit
+
+  - it: explicit zero history limit is rendered
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.successfulJobsHistoryLimit: 0
+    asserts:
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 0
+
+  - it: restartPolicy falls back to Never when both levels are null
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      jobDefaults.restartPolicy: null
+      fsck.job.restartPolicy: null
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: "Never"

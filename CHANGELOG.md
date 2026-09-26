@@ -8,6 +8,33 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Helm: chart-wide `jobDefaults` for job execution policy.** A new top-level
+  `jobDefaults` block supplies `restartPolicy`, `backoffLimit` and
+  `ttlSecondsAfterFinished` to every Job and CronJob the chart renders
+  (`migration`, `fsck`, `migrateChunksToNar`, `migrateNarToChunks`), and each
+  per-job `job:` block can override any of the three independently. Resolution
+  is per-job value, then `jobDefaults`; if both are null, `backoffLimit` and
+  `ttlSecondsAfterFinished` are omitted so the Kubernetes default applies.
+  `restartPolicy` is the exception — it is always rendered, falling back to
+  `Never`, because a pod spec with no `restartPolicy` defaults to `Always`,
+  which the API server rejects for a Job. All four templates resolve through one
+  shared helper, so the rules cannot drift apart. Previously `restartPolicy` was
+  hardcoded and the retry/cleanup knobs were duplicated per job with no shared
+  default, so changing them meant patching the chart. Shipped defaults are
+  chosen so the rendered `backoffLimit`/`ttlSecondsAfterFinished` output is
+  unchanged. (#1514)
+
+- **Helm: configurable fsck CronJob history limits.**
+  `fsck.job.failedJobsHistoryLimit` and `fsck.job.successfulJobsHistoryLimit`
+  are now rendered into the fsck CronJob and tunable; `null` omits the field to
+  take the Kubernetes default and `0` retains none. These are CronJob-only
+  fields, so they live on `fsck.job` rather than in `jobDefaults`. Note that the
+  history limits and `ttlSecondsAfterFinished` are independent cleanup
+  mechanisms and whichever fires first wins — fsck inherits
+  `jobDefaults.ttlSecondsAfterFinished: 3600`, so clearing the TTL at both
+  levels is what makes the history limits govern retention. (See also the
+  default-changed note below.) (#1514)
+
 - **Trusted-signature gate on PUT uploads.** A new
   `--cache-require-trusted-signature` flag (env `CACHE_REQUIRE_TRUSTED_SIGNATURE`,
   **off by default**) makes ncps verify client-uploaded (`PUT`) narinfos before
@@ -134,6 +161,33 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   script supporting container-use workflows. (#1097)
 
 ### Fixed
+
+- **Helm: a failed Job's logs are no longer destroyed at the backoff limit.**
+  The migration, `migrate-chunks-to-nar` and `migrate-nar-to-chunks` templates
+  set `restartPolicy: OnFailure`, under which the Job controller deletes the pod
+  as soon as the backoff limit is reached — taking the failing run's logs with
+  it, exactly when an operator needs them. All three now render
+  `restartPolicy: Never`, so every attempt lands in its own pod and failed pods
+  survive until the job's TTL removes them. (The fsck CronJob was fixed
+  separately in #1510.) (#1514)
+
+- **Helm: `migration-job.yaml` rendered an invalid `backoffLimit` and dropped an
+  explicit TTL of `0`.** Its `backoffLimit` carried no null guard, so clearing
+  the value emitted the literal `backoffLimit: <no value>`; its
+  `ttlSecondsAfterFinished` used a truthiness guard, which treats `0` as unset,
+  so an explicit `0` (delete the job immediately once it finishes) was silently
+  discarded. Both now resolve through the shared helper, which tests for null
+  with `kindIs "invalid"` rather than truthiness precisely because `0` is
+  meaningful for both keys. The other three templates were already correct.
+  (#1514)
+
+- **Helm: corrected inverted `ttlSecondsAfterFinished` documentation.** Four
+  `values.yaml` comments claimed "Set to 0 to keep jobs indefinitely".
+  Kubernetes semantics are the opposite: `0` makes a finished job eligible for
+  deletion **immediately**, and omitting the field is what retains it
+  indefinitely — which additionally requires the per-job value *and*
+  `jobDefaults.ttlSecondsAfterFinished` to both be null. An operator following
+  the old wording would have deleted the jobs they were trying to keep. (#1514)
 
 - **A compressing reverse proxy in front of an upstream no longer corrupts
   already-compressed NARs.** ncps sent `Accept-Encoding: zstd` on *every*
@@ -327,6 +381,28 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Helm: job attempt counts shift by one, and fsck retains three failed runs.**
+  Two behaviour changes follow from the `restartPolicy` fix above.
+
+  The Job controller compares the backoff limit differently per policy —
+  restart counts with `>=` under `OnFailure`, failed pods with `>` under
+  `Never` — so at `backoffLimit: N` the old policy yielded N complete attempts
+  and the new one yields N+1. The migration Job therefore goes from 3 complete
+  attempts to 4, and the two migrate-\* Jobs from 1 to 2. The numeric defaults
+  are deliberately unchanged: `backoffLimit: N` now means the plainly
+  documented "N retries after the first attempt". Lower `backoffLimit` by one
+  to keep the previous effective count.
+
+  `fsck.job.failedJobsHistoryLimit` now defaults to `3` instead of relying on
+  the Kubernetes default of `1`. At `1` a failed fsck run's pod is deleted by
+  the very next failure, defeating the point of `restartPolicy: Never`. Set it
+  to `1` to restore the previous behaviour, or `null` to let Kubernetes decide.
+
+  **Upgrade note:** operators who set a per-job `backoffLimit` or
+  `ttlSecondsAfterFinished` to `null` in order to omit the field will now
+  inherit the corresponding `jobDefaults` value instead. To keep the field
+  omitted, set `jobDefaults.<key>: null` as well. (#1514)
+
 - **CDC lazy chunking is now opt-in (default: `false`).** In v0.9, lazy
   chunking was enabled by default after being introduced in #1081. Enabling it
   silently on upgrade starts background workers, a cleanup cron job, and delays
@@ -435,6 +511,7 @@ adoption action without touching the database.
 ### CI
 
 - New `nix flake check` derivations:
+
   - `ent-codegen-drift-check` — regenerates `ent/` and fails on diff.
   - `ent-lint-check` — runs `cmd/ent-lint --root .`; fails on any
     `[FAIL]` line.
@@ -442,3 +519,15 @@ adoption action without touching the database.
     matches the directory contents.
   - `schema-equivalence-check` — runs the `TestSchemaEquivalence`
     golden test across SQLite, PostgreSQL, and MySQL.
+
+- **`helm-unittest-check` now actually runs the chart tests.** The derivation
+  was a no-op stub that echoed a "skipped" message and passed unconditionally,
+  on the premise that the `helm-unittest` plugin binaries were missing from
+  nixpkgs. That premise was stale: wrapping helm with the plugin from the
+  flake's pinned nixpkgs builds and runs cleanly. Every chart unit test — 191 of
+  them — was therefore unguarded in CI while the gate showed green. The check
+  now executes them for real and fails on a broken assertion, and the same
+  plugin-wrapped helm is in the dev shell so `helm unittest charts/ncps`
+  reproduces the CI result locally. (Listing the plugin as a separate package
+  never worked, because helm resolves plugins through `HELM_PLUGINS`, not
+  `PATH`.) (#1514)

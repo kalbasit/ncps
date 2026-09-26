@@ -9,6 +9,12 @@ metadata:
 spec:
   schedule: {{ .Values.fsck.schedule | quote }}
   concurrencyPolicy: {{ .Values.fsck.job.concurrencyPolicy }}
+  {{- if not (kindIs "invalid" .Values.fsck.job.failedJobsHistoryLimit) }}
+  failedJobsHistoryLimit: {{ .Values.fsck.job.failedJobsHistoryLimit }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.fsck.job.successfulJobsHistoryLimit) }}
+  successfulJobsHistoryLimit: {{ .Values.fsck.job.successfulJobsHistoryLimit }}
+  {{- end }}
   {{- if .Values.fsck.timezone }}
   timeZone: {{ .Values.fsck.timezone | quote }}
   {{- end }}
@@ -26,7 +32,7 @@ spec:
             {{- include "ncps.selectorLabels" . | nindent 12 }}
             app.kubernetes.io/component: fsck
         spec:
-          restartPolicy: Never
+          restartPolicy: {{ include "ncps.job.restartPolicy" (dict "ctx" $ "job" $.Values.fsck.job) }}
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
@@ -176,10 +182,10 @@ spec:
             {{- with .Values.extraVolumes }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-      {{- if not (kindIs "invalid" .Values.fsck.job.backoffLimit) }}
-      backoffLimit: {{ .Values.fsck.job.backoffLimit }}
+      {{- with include "ncps.job.backoffLimit" (dict "ctx" $ "job" .Values.fsck.job) }}
+      backoffLimit: {{ . }}
       {{- end }}
-      {{- if not (kindIs "invalid" .Values.fsck.job.ttlSecondsAfterFinished) }}
-      ttlSecondsAfterFinished: {{ .Values.fsck.job.ttlSecondsAfterFinished }}
+      {{- with include "ncps.job.ttlSecondsAfterFinished" (dict "ctx" $ "job" .Values.fsck.job) }}
+      ttlSecondsAfterFinished: {{ . }}
       {{- end }}
 {{- end }}
