@@ -9,6 +9,12 @@ metadata:
 spec:
   schedule: {{ .Values.fsck.schedule | quote }}
   concurrencyPolicy: {{ .Values.fsck.job.concurrencyPolicy }}
+  {{- if not (kindIs "invalid" .Values.fsck.job.failedJobsHistoryLimit) }}
+  failedJobsHistoryLimit: {{ .Values.fsck.job.failedJobsHistoryLimit }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.fsck.job.successfulJobsHistoryLimit) }}
+  successfulJobsHistoryLimit: {{ .Values.fsck.job.successfulJobsHistoryLimit }}
+  {{- end }}
   {{- if .Values.fsck.timezone }}
   timeZone: {{ .Values.fsck.timezone | quote }}
   {{- end }}

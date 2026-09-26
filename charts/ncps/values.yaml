@@ -566,9 +566,9 @@ jobDefaults:
   # under "OnFailure" the Job controller deletes the pod as soon as the backoff
   # limit is reached, which destroys the logs of the run that failed. With
   # "Never" every attempt gets its own pod. A plain Job's failed pod then
-  # survives until ttlSecondsAfterFinished removes it; under a CronJob the
-  # controller's failedJobsHistoryLimit (Kubernetes default: 1) can remove an
-  # older failed Job, and its pods, before that TTL expires.
+  # survives until ttlSecondsAfterFinished removes it; under a CronJob,
+  # fsck.job.failedJobsHistoryLimit also caps how many failed Jobs are kept,
+  # and whichever of the two fires first wins.
   #
   # Note that the two policies also count attempts differently: at
   # backoffLimit: N, "OnFailure" yields N complete attempts while "Never"
@@ -676,6 +676,25 @@ fsck:
   job:
     # Concurrency policy for the job: "Allow", "Forbid" (default), or "Replace"
     concurrencyPolicy: Forbid
+
+    # How many finished fsck Jobs the CronJob controller retains. These are
+    # CronJob-only fields, so they live here rather than in jobDefaults (which
+    # applies to the plain Jobs too). null omits the field and takes the
+    # Kubernetes default; 0 retains none.
+    #
+    # failedJobsHistoryLimit is deliberately 3 rather than the Kubernetes
+    # default of 1: at 1, a failed fsck run's pod is deleted by the very next
+    # failure, which defeats restartPolicy: Never. Set it to 1 to restore the
+    # previous behaviour.
+    #
+    # NOTE: these limits and ttlSecondsAfterFinished are independent cleanup
+    # mechanisms and whichever fires first wins. fsck inherits
+    # jobDefaults.ttlSecondsAfterFinished (3600), so a failed Job is still
+    # removed an hour after it finishes regardless of the limit below. Clear the
+    # TTL at BOTH levels (fsck.job and jobDefaults) if you want these limits to
+    # be what governs retention.
+    failedJobsHistoryLimit: 3
+    successfulJobsHistoryLimit: 3
 
     # Backoff limit for job retries. null inherits jobDefaults.backoffLimit.
     backoffLimit: null

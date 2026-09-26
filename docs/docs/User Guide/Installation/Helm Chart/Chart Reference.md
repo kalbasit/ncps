@@ -368,8 +368,8 @@ applies.
 > `restartPolicy: Never` is strongly recommended. Under `OnFailure` the Job controller deletes the
 > pod as soon as the backoff limit is reached, which destroys the logs of the run that failed.
 > With `Never`, a plain Job's failed pod survives until `ttlSecondsAfterFinished` removes it. Under
-> a CronJob such as fsck, the controller's `failedJobsHistoryLimit` (Kubernetes default: `1`) can
-> remove an older failed Job, and its pods, before that TTL expires.
+> a CronJob such as fsck, `fsck.job.failedJobsHistoryLimit` additionally caps how many failed Jobs
+> the controller keeps. The two are independent cleanup mechanisms and whichever fires first wins.
 >
 > The two policies also count attempts differently: at `backoffLimit: N`, `OnFailure` yields N
 > complete attempts while `Never` yields N+1, because the Job controller compares restart counts
@@ -413,12 +413,25 @@ applies.
 | `fsck.securityContext` | Security context for fsck pod | See values.yaml |
 | `fsck.job.backoffLimit` | Job backoff limit (`null` inherits `jobDefaults.backoffLimit`) | `null` |
 | `fsck.job.concurrencyPolicy` | Job concurrency policy (`Allow`, `Forbid`, `Replace`) | `Forbid` |
+| `fsck.job.failedJobsHistoryLimit` | Failed fsck Jobs the CronJob retains (`null` omits the field; `0` retains none) | `3` |
+| `fsck.job.successfulJobsHistoryLimit` | Successful fsck Jobs the CronJob retains (`null` omits the field; `0` retains none) | `3` |
 | `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish, seconds (`null` inherits `jobDefaults.ttlSecondsAfterFinished`) | `null` |
 | `fsck.job.restartPolicy` | Pod restart policy (`null` inherits `jobDefaults.restartPolicy`) | `null` |
 | `fsck.job.annotations` | Annotations for the Job | `{}` |
 | `fsck.job.nodeSelector` | Node selector for the Job | `{}` |
 | `fsck.job.tolerations` | Tolerations for the Job | `[]` |
 | `fsck.job.affinity` | Affinity for the Job | `{}` |
+
+> [!NOTE]
+> `fsck.job.failedJobsHistoryLimit` defaults to `3`, deliberately higher than the Kubernetes default
+> of `1`. At `1`, a failed fsck run's pod is deleted by the very next failure, which defeats
+> `restartPolicy: Never`. Set it to `1` to restore the previous behaviour, or `null` to let
+> Kubernetes decide.
+>
+> Note that fsck inherits `jobDefaults.ttlSecondsAfterFinished` (`3600`), so a failed Job is still
+> removed an hour after it finishes regardless of this limit. Clear the TTL at **both** levels
+> (`fsck.job.ttlSecondsAfterFinished` and `jobDefaults.ttlSecondsAfterFinished`) if you want the
+> history limits to be what governs retention.
 
 > [!NOTE]
 > The fsck CronJob is disabled by default. When enabled, it runs the `ncps fsck` command using the same database and storage configuration as the main application.

@@ -835,6 +835,22 @@
                 null
               ],
               "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
+            },
+            "failedJobsHistoryLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "How many failed fsck Jobs the CronJob retains. null omits the field (Kubernetes default: 1); 0 retains none."
+            },
+            "successfulJobsHistoryLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "How many successful fsck Jobs the CronJob retains. null omits the field (Kubernetes default: 3); 0 retains none."
             }
           }
         }

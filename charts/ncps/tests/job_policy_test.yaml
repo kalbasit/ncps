@@ -298,3 +298,54 @@ tests:
       - equal:
           path: spec.ttlSecondsAfterFinished
           value: 3600
+
+  # ------------------------------------------------------------------
+  # Requirement: CronJob history limits are operator-configurable
+  # ------------------------------------------------------------------
+  - it: fsck cronjob retains more than one failed run by default
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 3
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 3
+
+  - it: history limits are overridable
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.failedJobsHistoryLimit: 10
+    asserts:
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 10
+
+  - it: null history limits omit the fields
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.failedJobsHistoryLimit: null
+      fsck.job.successfulJobsHistoryLimit: null
+    asserts:
+      - isNull:
+          path: spec.failedJobsHistoryLimit
+      - isNull:
+          path: spec.successfulJobsHistoryLimit
+
+  - it: explicit zero history limit is rendered
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+      fsck.job.successfulJobsHistoryLimit: 0
+    asserts:
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 0
