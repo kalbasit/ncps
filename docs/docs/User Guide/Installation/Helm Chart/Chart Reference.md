@@ -350,6 +350,33 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `sidecars` | Sidecar containers | `[]` |
 | `tests.enabled` | Enable Helm tests | `false` |
 
+### Job Defaults
+
+These defaults apply to every Job and CronJob the chart renders (migration, fsck,
+migrate-chunks-to-nar, migrate-nar-to-chunks). Each job's own `job:` block can override any
+of them independently. Resolution order per key is: the per-job value when non-null, then the
+`jobDefaults` value when non-null, otherwise the field is omitted and the Kubernetes default
+applies.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `jobDefaults.restartPolicy` | `restartPolicy` for every job pod spec | `Never` |
+| `jobDefaults.backoffLimit` | Retries after the first attempt, for jobs that do not override it | `1` |
+| `jobDefaults.ttlSecondsAfterFinished` | Seconds a finished job is retained, for jobs that do not override it | `3600` |
+
+> [!NOTE]
+> `restartPolicy: Never` is strongly recommended. Under `OnFailure` the Job controller deletes the
+> pod as soon as the backoff limit is reached, which destroys the logs of the run that failed.
+>
+> The two policies also count attempts differently: at `backoffLimit: N`, `OnFailure` yields N
+> complete attempts while `Never` yields N+1, because the Job controller compares restart counts
+> with `>=` and failed pods with `>`. Lower `backoffLimit` by one if you are migrating from
+> `OnFailure` and want to keep the previous effective attempt count.
+
+> [!NOTE]
+> Setting `ttlSecondsAfterFinished` to `0` makes a finished job eligible for deletion
+> **immediately**. To retain finished jobs indefinitely, set the key to `null`.
+
 ### Database Migration
 
 | Parameter | Description | Default |
@@ -358,8 +385,9 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `migration.mode` | Migration mode: `initContainer`, `job`, `argocd` | `initContainer` |
 | `migration.resources` | Resources for migration container/job | `{}` |
 | `migration.securityContext` | Security context for migration container/job | See values.yaml |
-| `migration.job.backoffLimit` | Job backoff limit | `3` |
-| `migration.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `300` |
+| `migration.job.backoffLimit` | Job backoff limit (`null` inherits `jobDefaults.backoffLimit`) | `3` |
+| `migration.job.ttlSecondsAfterFinished` | Job TTL after finish, seconds (`null` inherits `jobDefaults.ttlSecondsAfterFinished`) | `300` |
+| `migration.job.restartPolicy` | Pod restart policy (`null` inherits `jobDefaults.restartPolicy`) | `null` |
 | `migration.job.annotations` | Job annotations | `{}` |
 | `migration.job.nodeSelector` | Node selector for migration job | `{}` |
 | `migration.job.tolerations` | Tolerations for migration job | `[]` |
@@ -376,9 +404,10 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `fsck.verifiedSince` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) | `""` |
 | `fsck.resources` | Resources for fsck pod | `{}` |
 | `fsck.securityContext` | Security context for fsck pod | See values.yaml |
-| `fsck.job.backoffLimit` | Job backoff limit | `1` |
+| `fsck.job.backoffLimit` | Job backoff limit (`null` inherits `jobDefaults.backoffLimit`) | `null` |
 | `fsck.job.concurrencyPolicy` | Job concurrency policy (`Allow`, `Forbid`, `Replace`) | `Forbid` |
-| `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `3600` |
+| `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish, seconds (`null` inherits `jobDefaults.ttlSecondsAfterFinished`) | `null` |
+| `fsck.job.restartPolicy` | Pod restart policy (`null` inherits `jobDefaults.restartPolicy`) | `null` |
 | `fsck.job.annotations` | Annotations for the Job | `{}` |
 | `fsck.job.nodeSelector` | Node selector for the Job | `{}` |
 | `fsck.job.tolerations` | Tolerations for the Job | `[]` |

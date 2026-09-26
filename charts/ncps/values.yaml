@@ -549,6 +549,43 @@ initContainers: []
 # Sidecar containers
 sidecars: []
 
+# Default execution policy shared by every Job and CronJob this chart renders
+# (migration, fsck, migrate-chunks-to-nar, migrate-nar-to-chunks).
+#
+# Each job's own `job:` block below can override any of these keys
+# independently. Resolution order for each key is:
+#   1. the per-job value (<job>.job.<key>) when it is not null
+#   2. this jobDefaults value when it is not null
+#   3. otherwise the key is omitted entirely and Kubernetes' own default applies
+#
+# Because a per-job null means "inherit from here", omitting a key for exactly
+# one job is expressed by setting the key to null here and giving the other jobs
+# explicit values.
+jobDefaults:
+  # restartPolicy for the job's pod spec. "Never" is strongly recommended:
+  # under "OnFailure" the Job controller deletes the pod as soon as the backoff
+  # limit is reached, which destroys the logs of the run that failed. With
+  # "Never" every attempt gets its own pod and failed pods survive until
+  # ttlSecondsAfterFinished removes them.
+  #
+  # Note that the two policies also count attempts differently: at
+  # backoffLimit: N, "OnFailure" yields N complete attempts while "Never"
+  # yields N+1, because the Job controller compares restart counts with >= and
+  # failed pods with >. Lower backoffLimit by one if you are migrating from
+  # "OnFailure" and want the previous effective attempt count.
+  restartPolicy: Never
+
+  # Number of retries after the first attempt before the job is marked failed.
+  # Set to 0 for a single attempt with no retry. Set to null (here and on every
+  # job) to omit the field and take the Kubernetes default of 6.
+  backoffLimit: 1
+
+  # Seconds to retain a finished job (and its pods) before automatic deletion.
+  # 0 makes the job eligible for deletion immediately after it finishes.
+  # Set to null (here and on every job) to omit the field, which retains
+  # finished jobs indefinitely.
+  ttlSecondsAfterFinished: 3600
+
 # Database migration
 migration:
   # Enable database migration
@@ -573,11 +610,14 @@ migration:
 
   # Job configuration (only applies when mode is "job" or "argocd")
   job:
-    # Backoff limit for job retries
+    # Backoff limit for job retries. null inherits jobDefaults.backoffLimit;
+    # the migration job deliberately retries more than the chart-wide default.
     backoffLimit: 3
 
-    # TTL after job finishes (in seconds)
-    # Set to 0 to keep jobs indefinitely
+    # TTL after job finishes (in seconds). null inherits
+    # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
+    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
+    # finished jobs indefinitely.
     ttlSecondsAfterFinished: 300
 
     # Annotations for the job
@@ -634,12 +674,14 @@ fsck:
     # Concurrency policy for the job: "Allow", "Forbid" (default), or "Replace"
     concurrencyPolicy: Forbid
 
-    # Backoff limit for job retries
-    backoffLimit: 1
+    # Backoff limit for job retries. null inherits jobDefaults.backoffLimit.
+    backoffLimit: null
 
-    # TTL after job finishes (in seconds)
-    # Set to 0 to keep jobs indefinitely
-    ttlSecondsAfterFinished: 3600
+    # TTL after job finishes (in seconds). null inherits
+    # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
+    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
+    # finished jobs indefinitely.
+    ttlSecondsAfterFinished: null
 
     # Annotations for the job
     annotations: {}
@@ -688,11 +730,14 @@ migrateChunksToNar:
 
   # Job configuration
   job:
-    # Backoff limit for job retries
-    backoffLimit: 1
+    # Backoff limit for job retries. null inherits jobDefaults.backoffLimit.
+    backoffLimit: null
 
-    # TTL after job finishes (in seconds). Set to 0 to keep jobs indefinitely.
-    ttlSecondsAfterFinished: 3600
+    # TTL after job finishes (in seconds). null inherits
+    # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
+    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
+    # finished jobs indefinitely.
+    ttlSecondsAfterFinished: null
 
     # Annotations for the job
     annotations: {}
@@ -729,11 +774,14 @@ migrateNarToChunks:
   securityContext: {}
 
   job:
-    # Backoff limit for job retries
-    backoffLimit: 1
+    # Backoff limit for job retries. null inherits jobDefaults.backoffLimit.
+    backoffLimit: null
 
-    # TTL after job finishes (in seconds). Set to 0 to keep jobs indefinitely.
-    ttlSecondsAfterFinished: 3600
+    # TTL after job finishes (in seconds). null inherits
+    # jobDefaults.ttlSecondsAfterFinished. 0 deletes the job immediately once
+    # it finishes; set jobDefaults.ttlSecondsAfterFinished to null to retain
+    # finished jobs indefinitely.
+    ttlSecondsAfterFinished: null
 
     # Annotations for the job
     annotations: {}

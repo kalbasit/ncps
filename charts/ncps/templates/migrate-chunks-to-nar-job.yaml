@@ -11,11 +11,11 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.backoffLimit) }}
-  backoffLimit: {{ .Values.migrateChunksToNar.job.backoffLimit }}
+  {{- with include "ncps.job.backoffLimit" (dict "ctx" $ "job" $.Values.migrateChunksToNar.job) }}
+  backoffLimit: {{ . }}
   {{- end }}
-  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.ttlSecondsAfterFinished) }}
-  ttlSecondsAfterFinished: {{ .Values.migrateChunksToNar.job.ttlSecondsAfterFinished }}
+  {{- with include "ncps.job.ttlSecondsAfterFinished" (dict "ctx" $ "job" $.Values.migrateChunksToNar.job) }}
+  ttlSecondsAfterFinished: {{ . }}
   {{- end }}
   template:
     metadata:
@@ -23,7 +23,7 @@ spec:
         {{- include "ncps.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migrate-chunks-to-nar
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: {{ include "ncps.job.restartPolicy" (dict "ctx" $ "job" $.Values.migrateChunksToNar.job) }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

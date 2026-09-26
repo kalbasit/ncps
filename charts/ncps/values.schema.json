@@ -638,6 +638,40 @@
         }
       }
     },
+    "jobDefaults": {
+      "type": "object",
+      "description": "Default execution policy shared by every Job and CronJob the chart renders. Each job's own job block may override any key independently.",
+      "properties": {
+        "restartPolicy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Never",
+            "OnFailure",
+            null
+          ],
+          "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
+        },
+        "backoffLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Backoff limit for job retries. null inherits jobDefaults.backoffLimit."
+        },
+        "ttlSecondsAfterFinished": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "TTL after job finishes (in seconds). null inherits jobDefaults.ttlSecondsAfterFinished; 0 deletes the job immediately once it finishes."
+        }
+      }
+    },
     "migration": {
       "type": "object",
       "properties": {
@@ -666,14 +700,20 @@
           "type": "object",
           "properties": {
             "backoffLimit": {
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0,
-              "description": "Backoff limit for job retries"
+              "description": "Backoff limit for job retries. null inherits jobDefaults.backoffLimit."
             },
             "ttlSecondsAfterFinished": {
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0,
-              "description": "TTL after job finishes (in seconds)"
+              "description": "TTL after job finishes (in seconds). null inherits jobDefaults.ttlSecondsAfterFinished; 0 deletes the job immediately once it finishes."
             },
             "annotations": {
               "type": "object",
@@ -690,6 +730,18 @@
             "affinity": {
               "type": "object",
               "description": "Affinity for migration job"
+            },
+            "restartPolicy": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Never",
+                "OnFailure",
+                null
+              ],
+              "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
             }
           }
         }
@@ -731,9 +783,12 @@
           "type": "object",
           "properties": {
             "backoffLimit": {
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0,
-              "description": "Backoff limit for job retries"
+              "description": "Backoff limit for job retries. null inherits jobDefaults.backoffLimit."
             },
             "concurrencyPolicy": {
               "type": "string",
@@ -746,9 +801,12 @@
               "description": "Concurrency policy for the job: Allow, Forbid (default), or Replace"
             },
             "ttlSecondsAfterFinished": {
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0,
-              "description": "TTL after job finishes (in seconds)"
+              "description": "TTL after job finishes (in seconds). null inherits jobDefaults.ttlSecondsAfterFinished; 0 deletes the job immediately once it finishes."
             },
             "annotations": {
               "type": "object",
@@ -765,6 +823,172 @@
             "affinity": {
               "type": "object",
               "description": "Affinity for fsck job"
+            },
+            "restartPolicy": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Never",
+                "OnFailure",
+                null
+              ],
+              "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
+            }
+          }
+        }
+      }
+    },
+    "migrateChunksToNar": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the migrate-chunks-to-nar Job"
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Report what would be migrated without writing or deleting"
+        },
+        "forceReclaim": {
+          "type": "boolean",
+          "description": "Reclaim chunks even when they are still referenced"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of concurrent migration workers"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resources for the migration container/job"
+        },
+        "securityContext": {
+          "type": "object",
+          "description": "Security context for the migration container/job"
+        },
+        "job": {
+          "type": "object",
+          "properties": {
+            "backoffLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Backoff limit for job retries. null inherits jobDefaults.backoffLimit."
+            },
+            "ttlSecondsAfterFinished": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "TTL after job finishes (in seconds). null inherits jobDefaults.ttlSecondsAfterFinished; 0 deletes the job immediately once it finishes."
+            },
+            "restartPolicy": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Never",
+                "OnFailure",
+                null
+              ],
+              "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Annotations for the job"
+            },
+            "nodeSelector": {
+              "type": "object",
+              "description": "Node selector for the job"
+            },
+            "tolerations": {
+              "type": "array",
+              "description": "Tolerations for the job"
+            },
+            "affinity": {
+              "type": "object",
+              "description": "Affinity for the job"
+            }
+          }
+        }
+      }
+    },
+    "migrateNarToChunks": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the migrate-nar-to-chunks Job"
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Report what would be migrated without writing or deleting"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of concurrent migration workers"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resources for the migration container/job"
+        },
+        "securityContext": {
+          "type": "object",
+          "description": "Security context for the migration container/job"
+        },
+        "job": {
+          "type": "object",
+          "properties": {
+            "backoffLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Backoff limit for job retries. null inherits jobDefaults.backoffLimit."
+            },
+            "ttlSecondsAfterFinished": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "TTL after job finishes (in seconds). null inherits jobDefaults.ttlSecondsAfterFinished; 0 deletes the job immediately once it finishes."
+            },
+            "restartPolicy": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Never",
+                "OnFailure",
+                null
+              ],
+              "description": "restartPolicy for the job's pod spec. Never is recommended: under OnFailure the Job controller deletes the pod once the backoff limit is reached, destroying the failed run's logs."
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Annotations for the job"
+            },
+            "nodeSelector": {
+              "type": "object",
+              "description": "Node selector for the job"
+            },
+            "tolerations": {
+              "type": "array",
+              "description": "Tolerations for the job"
+            },
+            "affinity": {
+              "type": "object",
+              "description": "Affinity for the job"
             }
           }
         }
