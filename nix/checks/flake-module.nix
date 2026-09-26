@@ -386,7 +386,7 @@
           src = ../../.;
           outputs = [ "out" ];
           proxyVendor = true;
-          vendorHash = "sha256-t9GF6Rwf47c11vaXIo0B80kx8YooaIS5gviO5kJ1msw=";
+          vendorHash = "sha256-qDMtl7d9t+EC15jiKt3NtOuKIv+ycllznwGIhqrcTfc=";
           nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.git ];
           buildPhase = ''
             HOME=$TMPDIR
@@ -527,21 +527,42 @@
           '';
         };
 
-        # Helm chart unit tests via helm-unittest.
-        # Skipped on all platforms: the helm-unittest plugin in nixpkgs-26.05
-        # ships neither untt-linux-amd64 nor untt-linux-arm64, so the check
-        # fails at runtime on both x86_64-linux and aarch64-linux CI runners.
-        helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
-          name = "ncps-helm-unittest";
-          src = ../../charts/ncps;
-          nativeBuildInputs = [ ];
-          buildPhase = ''
-            echo "helm-unittest-check: skipped (helm-unittest plugin binaries missing in nixpkgs-26.05)"
-          '';
-          installPhase = ''
-            touch $out
-          '';
-        };
+        # Helm chart unit tests via helm-unittest. This check runs the suites
+        # under charts/ncps/tests/ for real and fails the gate when any
+        # assertion breaks; it was previously a no-op stub that always passed,
+        # which left every chart template unguarded while showing green.
+        #
+        # The plugin must be registered through HELM_PLUGINS — putting the
+        # plugin package on PATH alongside helm does NOT make `helm unittest`
+        # resolve — so helm is wrapped with wrapHelm. That also keeps the check
+        # hermetic: no `helm plugin install` (which needs network the sandbox
+        # denies) runs at build time. HOME points at a writable temp dir because
+        # the sandbox HOME is read-only.
+        # See the flake-check-topology spec, "`helm-unittest-check` executes the
+        # chart's unit tests".
+        helm-unittest-check =
+          let
+            helmWithUnittest = pkgs.wrapHelm pkgs.kubernetes-helm {
+              plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
+            };
+          in
+          pkgs.stdenvNoCC.mkDerivation {
+            name = "ncps-helm-unittest";
+            src = ../../charts/ncps;
+            dontConfigure = true;
+            nativeBuildInputs = [ helmWithUnittest ];
+            buildPhase = ''
+              runHook preBuild
+              export HOME="$TMPDIR"
+              helm unittest .
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              touch $out
+              runHook postInstall
+            '';
+          };
       };
     };
 }

@@ -25,6 +25,9 @@ tests:
           path: spec.schedule
           value: "0 1 * * *"
       - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: "Never"
+      - equal:
           path: spec.jobTemplate.spec.template.spec.containers[0].args
           value:
             - --config

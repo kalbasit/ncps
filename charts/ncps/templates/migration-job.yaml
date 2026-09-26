@@ -19,9 +19,11 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  backoffLimit: {{ .Values.migration.job.backoffLimit }}
-  {{- if .Values.migration.job.ttlSecondsAfterFinished }}
-  ttlSecondsAfterFinished: {{ .Values.migration.job.ttlSecondsAfterFinished }}
+  {{- with include "ncps.job.backoffLimit" (dict "ctx" $ "job" $.Values.migration.job) }}
+  backoffLimit: {{ . }}
+  {{- end }}
+  {{- with include "ncps.job.ttlSecondsAfterFinished" (dict "ctx" $ "job" $.Values.migration.job) }}
+  ttlSecondsAfterFinished: {{ . }}
   {{- end }}
   template:
     metadata:
@@ -29,7 +31,7 @@ spec:
         {{- include "ncps.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: {{ include "ncps.job.restartPolicy" (dict "ctx" $ "job" $.Values.migration.job) }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

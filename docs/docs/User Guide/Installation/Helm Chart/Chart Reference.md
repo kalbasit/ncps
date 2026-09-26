@@ -350,6 +350,42 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `sidecars` | Sidecar containers | `[]` |
 | `tests.enabled` | Enable Helm tests | `false` |
 
+### Job Defaults
+
+These defaults apply to every Job and CronJob the chart renders (migration, fsck,
+migrate-chunks-to-nar, migrate-nar-to-chunks). Each job's own `job:` block can override any
+of them independently. Resolution order per key is: the per-job value when non-null, then the
+`jobDefaults` value when non-null. If both are null, `backoffLimit` and `ttlSecondsAfterFinished`
+are omitted so the Kubernetes default applies. `restartPolicy` is the exception — it is always
+rendered, falling back to `Never`, because a pod spec with no `restartPolicy` defaults to `Always`,
+which the API server rejects for a Job.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `jobDefaults.restartPolicy` | `restartPolicy` for every job pod spec | `Never` |
+| `jobDefaults.backoffLimit` | Retries after the first attempt, for jobs that do not override it | `1` |
+| `jobDefaults.ttlSecondsAfterFinished` | Seconds a finished job is retained, for jobs that do not override it | `3600` |
+
+> [!NOTE]
+> `restartPolicy: Never` is strongly recommended. Under `OnFailure` the Job controller deletes the
+> pod as soon as the backoff limit is reached, which destroys the logs of the run that failed.
+> With `Never`, a plain Job's failed pod survives until `ttlSecondsAfterFinished` removes it. Under
+> a CronJob such as fsck, `fsck.job.failedJobsHistoryLimit` additionally caps how many failed Jobs
+> the controller keeps. The two are independent cleanup mechanisms and whichever fires first wins.
+>
+> The two policies also count attempts differently: at `backoffLimit: N`, `OnFailure` yields N
+> complete attempts while `Never` yields N+1, because the Job controller compares restart counts
+> with `>=` and failed pods with `>`. Lower `backoffLimit` by one if you are migrating from
+> `OnFailure` and want to keep the previous effective attempt count.
+
+> [!NOTE]
+> Setting `ttlSecondsAfterFinished` to `0` makes a finished job eligible for deletion
+> **immediately**. Retaining finished jobs indefinitely requires the field to be omitted, which
+> happens only when the per-job value **and** `jobDefaults.ttlSecondsAfterFinished` are both
+> `null` — clearing only one level still leaves the other's value in effect. Note that
+> `migration.job.ttlSecondsAfterFinished` ships with an explicit `300`, so it must be cleared
+> too.
+
 ### Database Migration
 
 | Parameter | Description | Default |
@@ -358,8 +394,9 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `migration.mode` | Migration mode: `initContainer`, `job`, `argocd` | `initContainer` |
 | `migration.resources` | Resources for migration container/job | `{}` |
 | `migration.securityContext` | Security context for migration container/job | See values.yaml |
-| `migration.job.backoffLimit` | Job backoff limit | `3` |
-| `migration.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `300` |
+| `migration.job.backoffLimit` | Job backoff limit (`null` inherits `jobDefaults.backoffLimit`) | `3` |
+| `migration.job.ttlSecondsAfterFinished` | Job TTL after finish, seconds (`null` inherits `jobDefaults.ttlSecondsAfterFinished`) | `300` |
+| `migration.job.restartPolicy` | Pod restart policy (`null` inherits `jobDefaults.restartPolicy`) | `null` |
 | `migration.job.annotations` | Job annotations | `{}` |
 | `migration.job.nodeSelector` | Node selector for migration job | `{}` |
 | `migration.job.tolerations` | Tolerations for migration job | `[]` |
@@ -376,13 +413,27 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `fsck.verifiedSince` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) | `""` |
 | `fsck.resources` | Resources for fsck pod | `{}` |
 | `fsck.securityContext` | Security context for fsck pod | See values.yaml |
-| `fsck.job.backoffLimit` | Job backoff limit | `1` |
+| `fsck.job.backoffLimit` | Job backoff limit (`null` inherits `jobDefaults.backoffLimit`) | `null` |
 | `fsck.job.concurrencyPolicy` | Job concurrency policy (`Allow`, `Forbid`, `Replace`) | `Forbid` |
-| `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `3600` |
+| `fsck.job.failedJobsHistoryLimit` | Failed fsck Jobs the CronJob retains (`null` omits the field; `0` retains none) | `3` |
+| `fsck.job.successfulJobsHistoryLimit` | Successful fsck Jobs the CronJob retains (`null` omits the field; `0` retains none) | `3` |
+| `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish, seconds (`null` inherits `jobDefaults.ttlSecondsAfterFinished`) | `null` |
+| `fsck.job.restartPolicy` | Pod restart policy (`null` inherits `jobDefaults.restartPolicy`) | `null` |
 | `fsck.job.annotations` | Annotations for the Job | `{}` |
 | `fsck.job.nodeSelector` | Node selector for the Job | `{}` |
 | `fsck.job.tolerations` | Tolerations for the Job | `[]` |
 | `fsck.job.affinity` | Affinity for the Job | `{}` |
+
+> [!NOTE]
+> `fsck.job.failedJobsHistoryLimit` defaults to `3`, deliberately higher than the Kubernetes default
+> of `1`. At `1`, a failed fsck run's pod is deleted by the very next failure, which defeats
+> `restartPolicy: Never`. Set it to `1` to restore the previous behaviour, or `null` to let
+> Kubernetes decide.
+>
+> Note that fsck inherits `jobDefaults.ttlSecondsAfterFinished` (`3600`), so a failed Job is still
+> removed an hour after it finishes regardless of this limit. Clear the TTL at **both** levels
+> (`fsck.job.ttlSecondsAfterFinished` and `jobDefaults.ttlSecondsAfterFinished`) if you want the
+> history limits to be what governs retention.
 
 > [!NOTE]
 > The fsck CronJob is disabled by default. When enabled, it runs the `ncps fsck` command using the same database and storage configuration as the main application.
