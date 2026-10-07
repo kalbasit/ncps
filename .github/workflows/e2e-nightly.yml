@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
       skip: ${{ steps.decide.outputs.skip }}
@@ -59,7 +59,7 @@ jobs:
   e2e:
     needs: gate
     if: needs.gate.outputs.skip != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +94,7 @@ jobs:
     # failure leaves the cache untouched and the next schedule retries the same
     # commit.
     if: ${{ needs.gate.outputs.skip != 'true' && needs.e2e.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Stamp the tested SHA
         run: |
