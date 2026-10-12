@@ -5234,6 +5234,13 @@ func (c *Cache) boundedStatNar(ctx context.Context, narURL nar.URL) (bool, error
 		// error here is the probe's own bound expiring and must be reported as a
 		// timeout, never passed through to be mistaken for an absence.
 		if errors.Is(res.err, context.DeadlineExceeded) {
+			// If the caller also went away, both select cases may have been ready
+			// and Go picks one at random: report the caller's cancellation, as the
+			// ctx.Done branch would, rather than a storage timeout.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, ctxErr
+			}
+
 			return false, reportStatTimeout(ctx, narURL, time.Since(start), timeout, res.err)
 		}
 

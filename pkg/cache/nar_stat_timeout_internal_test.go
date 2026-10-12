@@ -794,3 +794,29 @@ func TestCallerCancellationIsNotAProbeTimeout(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.NotErrorIs(t, err, ErrStatTimeout)
 }
+
+// TestCallerCancellationWinsOverBackendDeadline covers the window where the
+// backend reports the probe deadline *and* the caller has already cancelled by
+// the time the caller selects on the outcome. Both select cases are then ready
+// and Go picks one at random, so the result branch must defer to the caller's
+// cancellation instead of recording a storage timeout. The loop gives the
+// random choice enough chances to land on the result branch.
+func TestCallerCancellationWinsOverBackendDeadline(t *testing.T) {
+	t.Parallel()
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore {
+		return &deadlineReportingStore{NarStore: s}
+	})
+	c.SetStatTimeout(30 * time.Second)
+
+	narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+	for range 500 {
+		ctx, cancel := context.WithCancel(newContext())
+		cancel()
+
+		_, err := c.statNarInStore(ctx, narURL)
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotErrorIs(t, err, ErrStatTimeout)
+	}
+}

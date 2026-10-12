@@ -34,10 +34,12 @@ which is the same "could not determine" outcome). It never carries the caller's 
    slightly longer deadline than the timer so the timer always wins. That only makes the race less
    likely: scheduling delays are unbounded, and a backend-internal timeout would still slip through.
    Classifying `errors.Is(res.err, context.DeadlineExceeded)` is exact.
-2. **Caller cancellation keeps precedence through the existing branch.** The probe context is
-   detached from the caller, so a caller's cancellation can never come back as the backend's
-   deadline error. It wakes the existing `ctx.Done()` case, which returns `ctx.Err()`. No extra
-   check is needed in the result branch; a test pins the behaviour.
+2. **Caller cancellation takes precedence.** The probe context is detached from the caller, so
+   the backend's deadline error never carries the caller's cancellation. A parked caller is woken
+   through the `ctx.Done()` case. But if the caller cancels before it reaches the `select` and the
+   result is already buffered, both cases are ready and Go picks one at random. So the result
+   branch checks `ctx.Err()` before classifying a deadline, and returns the caller's error when it
+   is set. A test drives that window with an already-cancelled caller.
 3. **One reporting helper.** Move the timer branch's metric, span event, log line and error into a
    helper, and call it from both branches. The two timeout paths then cannot drift apart. The
    metric `reason` stays `deadline` for both.
