@@ -5228,29 +5228,52 @@ func (c *Cache) boundedStatNar(ctx context.Context, narURL nar.URL) (bool, error
 			return false, fmt.Errorf("%w: unexpected probe result type", ErrStatTimeout)
 		}
 
+		// A context-aware backend (S3) can observe the probe deadline before the
+		// timer below fires: both share the same duration and run on independent
+		// goroutines. The probe context is detached from the caller, so a deadline
+		// error here is the probe's own bound expiring and must be reported as a
+		// timeout, never passed through to be mistaken for an absence.
+		if errors.Is(res.err, context.DeadlineExceeded) {
+			return false, reportStatTimeout(ctx, narURL, time.Since(start), timeout, res.err)
+		}
+
 		return res.present, res.err
 	case <-ctx.Done():
 		// The caller went away: report that rather than a probe timeout.
 		return false, ctx.Err()
 	case <-timer.C:
-		elapsed := time.Since(start)
-
-		storageStatTimeoutTotal.Add(ctx, 1,
-			metric.WithAttributes(attribute.String("reason", "deadline")))
-
-		trace.SpanFromContext(ctx).AddEvent("storage.stat.timeout", trace.WithAttributes(
-			attribute.String("nar_url", narURL.String()),
-			attribute.Float64("elapsed_seconds", elapsed.Seconds()),
-		))
-
-		zerolog.Ctx(ctx).Warn().
-			Str("nar_url", narURL.String()).
-			Dur("elapsed", elapsed).
-			Dur("timeout", timeout).
-			Msg("storage presence probe timed out; presence undetermined")
-
-		return false, fmt.Errorf("%w after %s", ErrStatTimeout, elapsed)
+		return false, reportStatTimeout(ctx, narURL, time.Since(start), timeout, nil)
 	}
+}
+
+// reportStatTimeout records a timed-out presence probe (metric, span event and
+// warning) and returns the ErrStatTimeout to surface, wrapping cause when the
+// backend reported the expiry itself.
+func reportStatTimeout(
+	ctx context.Context,
+	narURL nar.URL,
+	elapsed, timeout time.Duration,
+	cause error,
+) error {
+	storageStatTimeoutTotal.Add(ctx, 1,
+		metric.WithAttributes(attribute.String("reason", "deadline")))
+
+	trace.SpanFromContext(ctx).AddEvent("storage.stat.timeout", trace.WithAttributes(
+		attribute.String("nar_url", narURL.String()),
+		attribute.Float64("elapsed_seconds", elapsed.Seconds()),
+	))
+
+	zerolog.Ctx(ctx).Warn().
+		Str("nar_url", narURL.String()).
+		Dur("elapsed", elapsed).
+		Dur("timeout", timeout).
+		Msg("storage presence probe timed out; presence undetermined")
+
+	if cause != nil {
+		return fmt.Errorf("%w after %s: %w", ErrStatTimeout, elapsed, cause)
+	}
+
+	return fmt.Errorf("%w after %s", ErrStatTimeout, elapsed)
 }
 
 // acquireStatProbeSlot reserves one of the maxInFlightStatProbes slots, returning

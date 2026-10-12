@@ -3,6 +3,7 @@ package cache
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -711,4 +712,85 @@ func TestStatProbeCapBoundsUniqueKeyBurst(t *testing.T) {
 
 	assert.LessOrEqual(t, peak, int64(maxInFlightStatProbes),
 		"concurrently blocked backend probes must never exceed the cap")
+}
+
+// deadlineReportingStore is a context-aware backend whose probe reports the
+// deadline itself, the way S3 does when its request context expires before the
+// caller-side timer fires.
+type deadlineReportingStore struct {
+	storage.NarStore
+}
+
+func (s *deadlineReportingStore) StatNar(_ context.Context, _ nar.URL) (bool, error) {
+	return false, fmt.Errorf("stat object: %w", context.DeadlineExceeded)
+}
+
+// TestBackendReportedDeadlineIsIndeterminate asserts that when the backend
+// observes the probe deadline before the request gives up on it, the outcome is
+// still a probe timeout. Passing the raw deadline error through would let
+// narServability treat a stalled probe as a confirmed absence.
+func TestBackendReportedDeadlineIsIndeterminate(t *testing.T) {
+	t.Parallel()
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore {
+		return &deadlineReportingStore{NarStore: s}
+	})
+	c.SetStatTimeout(30 * time.Second)
+
+	narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+	_, err := c.statNarInStore(newContext(), narURL)
+	require.ErrorIs(t, err, ErrStatTimeout)
+	require.ErrorIs(t, err, context.DeadlineExceeded, "the backend cause must stay visible")
+}
+
+// TestBackendReportedDeadlineIsNotReportedAsNotFound is the read-path half of
+// TestBackendReportedDeadlineIsIndeterminate: a probe whose deadline the backend
+// reported must not let GetNar answer 404 for a NAR it never managed to check.
+func TestBackendReportedDeadlineIsNotReportedAsNotFound(t *testing.T) {
+	t.Parallel()
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore {
+		return &deadlineReportingStore{NarStore: s}
+	})
+	c.SetStatTimeout(30 * time.Second)
+
+	narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: testdata.Nar1.NarCompression}
+
+	inner, ok := c.narStore.(*deadlineReportingStore)
+	require.True(t, ok)
+
+	_, err := inner.PutNar(
+		newContext(), narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)), -1,
+	)
+	require.NoError(t, err)
+
+	_, _, rc, err := c.GetNar(newContext(), narURL)
+	if rc != nil {
+		_ = rc.Close()
+	}
+
+	require.NotErrorIs(t, err, storage.ErrNotFound,
+		"a probe whose deadline expired must never surface as a 404")
+}
+
+// TestCallerCancellationIsNotAProbeTimeout asserts a client that goes away while
+// its probe is pending gets its own cancellation back. Counting it as a storage
+// timeout would page on client disconnects rather than slow storage.
+func TestCallerCancellationIsNotAProbeTimeout(t *testing.T) {
+	t.Parallel()
+
+	c := newServableTestCache(t, func(s *local.Store) storage.NarStore {
+		return &ctxRecordingStore{NarStore: s, delay: 30 * time.Second, done: make(chan struct{})}
+	})
+	c.SetStatTimeout(5 * time.Second)
+
+	narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+	ctx, cancel := context.WithCancel(newContext())
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	_, err := c.statNarInStore(ctx, narURL)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, ErrStatTimeout)
 }
