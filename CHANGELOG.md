@@ -162,6 +162,25 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **NAR requests no longer stall on a slow storage presence probe.** Before
+  serving a NAR, ncps checks whether it is in storage. On a hard NFS mount that
+  single `stat` was measured blocking for ~57s and could not be cancelled. Past
+  a 60s ingress read timeout, the proxy cut the response mid-body, and clients
+  got an HTTP 200 with a truncated body (`Truncated zstd input`, HTTP/2
+  `INTERNAL_ERROR`). The probe is now bounded per request by the new
+  `--cache-storage-stat-timeout` flag (env `CACHE_STORAGE_STAT_TIMEOUT`, config
+  `cache.storage.stat-timeout`, Helm `config.storage.statTimeout`, default `5s`,
+  `0` disables the bound). Keep it below your proxy's read timeout. S3 cancels
+  a timed-out probe; the local backend stops waiting on it. A timed-out probe
+  is treated as "presence undetermined", never as a cache miss, so it cannot
+  turn into a spurious 404 or, in upload-only mode, a phantom NAR. A follow-up
+  fix closed a race in which an S3 probe that hit the deadline first was still
+  reported as absent and answered 404 for a stored NAR. (#1479, #1528)
+
+- **`ncps fsck --repair` honours `cache-temp-path`.** The `fsck` command never
+  registered the flag, so a repair run used `/tmp` and aborted before repairing
+  anything on deployments with a read-only root filesystem. (#1403)
+
 - **Helm: a failed Job's logs are no longer destroyed at the backoff limit.**
   The migration, `migrate-chunks-to-nar` and `migrate-nar-to-chunks` templates
   set `restartPolicy: OnFailure`, under which the Job controller deletes the pod
@@ -380,6 +399,11 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     (#1347)
 
 ### Changed
+
+- **Clearer `fsck` and migration progress output.** `ncps fsck` prints a run
+  plan up front and uses consistent per-phase messages (#1402).
+  `migrate-chunks-to-nar` now prints a progress line even when it finishes
+  within the first reporting interval; short runs used to print none (#1478).
 
 - **Helm: job attempt counts shift by one, and fsck retains three failed runs.**
   Two behaviour changes follow from the `restartPolicy` fix above.

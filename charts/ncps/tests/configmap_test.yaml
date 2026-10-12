@@ -204,6 +204,56 @@ tests:
           path: data["config.yaml"]
           pattern: "force-path-style: true"
 
+  - it: should set the storage presence probe timeout when configured
+    set:
+      config.hostname: test.example.com
+      config.storage.statTimeout: 15s
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'stat-timeout: "15s"'
+
+  - it: should set the storage presence probe timeout with S3 storage
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.region: us-east-1
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.storage.statTimeout: 15s
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'stat-timeout: "15s"'
+
+  - it: should render a zero storage presence probe timeout to disable the bound
+    set:
+      config.hostname: test.example.com
+      config.storage.statTimeout: "0"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'stat-timeout: "0"'
+
+  - it: should render a numeric zero storage presence probe timeout to disable the bound
+    set:
+      config.hostname: test.example.com
+      config.storage.statTimeout: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'stat-timeout: "0"'
+
+  - it: should omit the storage presence probe timeout when unset
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "stat-timeout:"
+
   - it: should configure database pool settings for PostgreSQL
     set:
       config.hostname: test.example.com

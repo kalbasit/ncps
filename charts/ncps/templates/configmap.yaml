@@ -131,6 +131,9 @@ data:
           force-path-style: true
           {{- end }}
         {{- end }}
+        {{- if not (kindIs "invalid" .Values.config.storage.statTimeout) }}
+        stat-timeout: {{ .Values.config.storage.statTimeout | toString | quote }}
+        {{- end }}
 
       {{- if .Values.config.redis.enabled }}
       redis:

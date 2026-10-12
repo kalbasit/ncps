@@ -166,6 +166,20 @@
                 "s3"
               ]
             },
+            "statTimeout": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "const": 0
+                }
+              ],
+              "description": "Maximum time the NAR read path waits on a storage presence probe before treating presence as undetermined, as a Go duration string (e.g. \"5s\"). \"0\" or 0 disables the bound; null uses the server default (5s). Other bare numbers are rejected because a duration needs a unit."
+            },
             "local": {
               "type": "object",
               "properties": {
