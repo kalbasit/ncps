@@ -133,6 +133,7 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 | `--cache-lru-schedule` | LRU cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
 | `--cache-lru-schedule-timezone` | Timezone for LRU cron schedule (e.g., `America/Los_Angeles`) | `CACHE_LRU_SCHEDULE_TZ` | UTC |
 | `--cache-download-poll-timeout` | Timeout for polling storage when waiting for download completion | `CACHE_DOWNLOAD_POLL_TIMEOUT` | `30s` |
+| `--cache-storage-stat-timeout` | Maximum time the NAR read path waits on a storage presence probe before treating presence as undetermined. Keep it below your reverse-proxy read timeout so a stat stuck on slow storage (e.g. a hard NFS mount) cannot make the proxy cut a response mid-body. A timed-out probe is never treated as a cache miss. `0` disables the bound | `CACHE_STORAGE_STAT_TIMEOUT` | `5s` |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
 **Database URL Formats:**

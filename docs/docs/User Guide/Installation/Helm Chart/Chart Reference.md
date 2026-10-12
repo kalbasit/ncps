@@ -159,6 +159,7 @@ Configuration for the temporary directory used for downloads and transient opera
 | Parameter | Description | Default |
 | --- | --- | --- |
 | `config.storage.type` | Storage type: `local` or `s3` | `local` |
+| `config.storage.statTimeout` | Maximum time the NAR read path waits on a storage presence probe before treating presence as undetermined. Keep it below your ingress read timeout. `"0"` disables the bound. | `null` (server default: `5s`) |
 | `config.storage.local.path` | Local storage path | `/storage` |
 | `config.storage.local.persistence.enabled` | Enable persistent storage | `true` |
 | `config.storage.local.persistence.existingClaim` | Use existing PVC | `""` |

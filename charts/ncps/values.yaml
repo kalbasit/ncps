@@ -249,6 +249,14 @@ config:
     # Storage type: "local" or "s3"
     type: "local"
 
+    # Maximum time the NAR read path waits on a storage presence probe before
+    # treating presence as undetermined. Keep it below your reverse-proxy/ingress
+    # read timeout: a stat stuck on slow storage (e.g. a hard NFS mount) can
+    # otherwise let the proxy abort the response mid-body. A timed-out probe is
+    # never treated as a cache miss. Set to "0" to disable the bound. Leave null
+    # to use the server default (5s).
+    statTimeout: null
+
     # Local filesystem storage
     local:
       # Path for local storage
