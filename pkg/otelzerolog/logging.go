@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
 )
 
 // OtelWriter implements zerolog.LevelWriter interface.
@@ -19,7 +19,7 @@ type OtelWriter struct {
 // NewOtelWriter creates a new OpenTelemetry writer for zerolog.
 func NewOtelWriter(loggerProvider log.LoggerProvider) (*OtelWriter, error) {
 	if loggerProvider == nil {
-		loggerProvider = global.GetLoggerProvider()
+		loggerProvider = otel.GetLoggerProvider()
 	}
 
 	logger := loggerProvider.Logger("otel-zerolog")
