@@ -6,6 +6,8 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-12
+
 ### Added
 
 - **Helm: chart-wide `jobDefaults` for job execution policy.** A new top-level
