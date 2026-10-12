@@ -253,7 +253,7 @@ config:
     # treating presence as undetermined. Keep it below your reverse-proxy/ingress
     # read timeout: a stat stuck on slow storage (e.g. a hard NFS mount) can
     # otherwise let the proxy abort the response mid-body. A timed-out probe is
-    # never treated as a cache miss. Set to "0" to disable the bound. Leave null
+    # never treated as a cache miss. Set to 0 to disable the bound. Leave null
     # to use the server default (5s).
     statTimeout: null
 

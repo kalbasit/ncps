@@ -237,6 +237,15 @@ tests:
           path: data["config.yaml"]
           pattern: 'stat-timeout: "0"'
 
+  - it: should render a numeric zero storage presence probe timeout to disable the bound
+    set:
+      config.hostname: test.example.com
+      config.storage.statTimeout: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'stat-timeout: "0"'
+
   - it: should omit the storage presence probe timeout when unset
     set:
       config.hostname: test.example.com
