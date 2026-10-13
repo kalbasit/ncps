@@ -9,7 +9,7 @@ require (
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.44.0
 	github.com/andybalholm/brotli v1.2.6
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-redsync/redsync/v4 v4.18.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/google/uuid v1.6.0
