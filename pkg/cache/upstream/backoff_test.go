@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,38 +16,12 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-// timestampRoundTripper records the wall-clock time of each call. It fails the
-// first call with a retriable transport error, then succeeds with the Nar1
-// narinfo fixture.
-type timestampRoundTripper struct {
-	mu    sync.Mutex
-	times []time.Time
-}
-
-func (r *timestampRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	r.mu.Lock()
-	r.times = append(r.times, time.Now())
-	n := len(r.times)
-	r.mu.Unlock()
-
-	if n == 1 {
-		return nil, errConnReset
-	}
-
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)),
-		Request:    req,
-	}, nil
-}
-
 func TestDoRequest_RetriesUseBackoff(t *testing.T) {
 	t.Parallel()
 
 	const backoff = 40 * time.Millisecond
 
-	rt := &timestampRoundTripper{}
+	rt := &failOnceRoundTripper{err: errConnReset}
 	c, err := upstream.New(
 		context.Background(),
 		testhelper.MustParseURL(t, "https://cache.nixos.org"),
@@ -56,17 +29,41 @@ func TestDoRequest_RetriesUseBackoff(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	rec := &delayRecorder{}
+	c.SetRetryWaitForTest(rec.wait)
+
 	_, err = c.GetNarInfo(context.Background(), "hash")
 	require.NoError(t, err)
 
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
+	assert.Equal(t, 2, rt.count, "expected exactly one retry")
+	assert.Equal(t, []time.Duration{backoff}, rec.recorded(),
+		"a retry must wait the base backoff delay, not retry immediately")
+}
 
-	require.Len(t, rt.times, 2, "expected exactly one retry")
+// TestDoRequest_BackoffDelayIsCapped verifies that the per-attempt backoff never
+// exceeds the fixed cap, even when the configured base is larger than it.
+func TestDoRequest_BackoffDelayIsCapped(t *testing.T) {
+	t.Parallel()
 
-	gap := rt.times[1].Sub(rt.times[0])
-	assert.GreaterOrEqual(t, gap, backoff*3/4,
-		"a retry must wait a backoff delay (got %s), not retry immediately", gap)
+	// Matches defaultRetryBackoffCap in cache.go.
+	const backoffCap = 2 * time.Second
+
+	rt := &alwaysTransientRoundTripper{}
+	c, err := upstream.New(
+		context.Background(),
+		testhelper.MustParseURL(t, "https://cache.nixos.org"),
+		&upstream.Options{Transport: rt, RetryBackoff: 5 * time.Second},
+	)
+	require.NoError(t, err)
+
+	rec := &delayRecorder{}
+	c.SetRetryWaitForTest(rec.wait)
+
+	_, err = c.GetNarInfo(context.Background(), "hash")
+	require.Error(t, err)
+
+	assert.Equal(t, []time.Duration{backoffCap, backoffCap}, rec.recorded(),
+		"every backoff delay must be clamped to the cap")
 }
 
 // cancelOnFailRoundTripper cancels the request context and returns a retriable
