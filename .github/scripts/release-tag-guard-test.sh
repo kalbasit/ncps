@@ -108,6 +108,15 @@ echo '- a late entry' >>"$r/CHANGELOG.md"
 commit "$r" "docs(changelog): touch up after the release"
 expect "heading already existed in the parent fails" fail "## [1.2.3]" "$r" v1.2.3
 
+# Editing the date of an existing heading shows up as a removed line plus an
+# added "## [1.2.3]" line, but it does not cut the release.
+r=$(new_repo)
+add_heading "$r" 1.2.3
+commit "$r" "docs(changelog): release v1.2.3"
+sed -i 's/^## \[1\.2\.3\] - 2026-02-02$/## [1.2.3] - 2026-02-03/' "$r/CHANGELOG.md"
+commit "$r" "docs(changelog): correct the v1.2.3 release date"
+expect "editing an existing heading's date fails" fail "## [1.2.3]" "$r" v1.2.3
+
 # A --no-ff merge of a changelog-only branch: diffed against its first parent
 # it looks like a release commit, so only the parent count catches it.
 r=$(new_repo)

@@ -46,9 +46,17 @@ fi
 # piping it into `grep -q` would let grep's early exit SIGPIPE git, which
 # pipefail reports as a failure on large diffs.
 version=${tag#v}
+heading="## \[${version//./\\.}\]( |\$)"
 diff=$(git diff -U0 "$commit^" "$commit" -- CHANGELOG.md)
-if ! grep -qE "^\+## \[${version//./\\.}\]( |\$)" <<<"$diff"; then
+if ! grep -qE "^\+$heading" <<<"$diff"; then
   fail "$commit does not add a '## [$version]' heading to CHANGELOG.md"
+fi
+
+# Editing an existing heading (e.g. correcting its date) also shows up as an
+# added line, so the parent must not already have released this version.
+parent_changelog=$(git show "$commit^:CHANGELOG.md" 2>/dev/null || true)
+if grep -qE "^$heading" <<<"$parent_changelog"; then
+  fail "$commit^ already has a '## [$version]' heading; $commit is not the commit that cut the release"
 fi
 
 echo "release-tag-guard: $tag at $(git rev-parse --short "$commit") is a changelog-only release commit"

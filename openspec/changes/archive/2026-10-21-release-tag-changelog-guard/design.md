@@ -40,9 +40,11 @@ It runs these checks in order and stops at the first failure:
 4. Heading added: `git diff -U0 <commit>^ <commit> -- CHANGELOG.md` must contain an added line
    matching `^\+## \[X\.Y\.Z\]( |$)`, with the version's dots escaped.
 
-Check 4 tests that the heading is *added by this commit*, not just present. That one check covers
-both the "different version" scenario and the "already existed in the parent" scenario. It also
-pins the tag to the single commit that cut the release.
+Check 4 tests that the heading is *added by this commit*, not just present. On its own it is not
+enough: editing an existing heading (for example correcting its date) appears in the diff as a
+removed line plus an added `## [X.Y.Z]` line. So a fifth check requires that the parent's
+`CHANGELOG.md` does **not** already contain the heading. Together, checks 4 and 5 pin the tag to
+the single commit that cut the release. (Raised in review on #1539.)
 
 *Alternative:* inline the logic in a workflow `run:` block. Rejected because it can't be tested
 hermetically, and the YAML would drift from whatever we did test.
