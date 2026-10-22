@@ -6,6 +6,36 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-21
+
+### Fixed
+
+- **The upstream retry-backoff tests no longer fail on loaded builders.**
+  `TestDoRequest_NoBackoffOnFinalAttempt` put a wall-clock bound of 300ms on a
+  three-attempt retry run. A busy builder took 752ms, which failed the package's
+  check phase: the nixpkgs aarch64-linux build of 0.10.0 broke this way, as
+  reported in NixOS/nixpkgs#574569. The retry backoff wait can now be replaced in
+  tests, and the backoff tests assert the exact delays requested instead of the
+  elapsed time: `[base, 2*base]` with no wait after the final attempt, and every
+  delay clamped to the cap. Runtime retry behaviour is unchanged. (#1538)
+
+### Changed
+
+- **Dependency updates.** `github.com/klauspost/compress` to v1.20.3 (#1533) and
+  `github.com/minio/minio-go/v7` to v7.4.1 (#1535).
+
+### CI
+
+- **Release tags are verified before anything is published.** `v0.10.1` was
+  first tagged on a code commit, so its tarball would have shipped without this
+  changelog entry. The `Releases` workflow now runs a `guard` job ahead of
+  `build`. A stable `vX.Y.Z` tag must point at a single-parent commit that
+  changes only `CHANGELOG.md` and adds the matching `## [X.Y.Z]` heading;
+  otherwise the build, Helm, and release jobs are skipped and nothing is
+  published. `alpha`/`beta`/`rc` tags are exempt. The guard's test suite runs as
+  the `release-tag-guard-check` flake check. (#1539)
+- The Helm chart workflow now uses Helm v4.3.1. (#1537)
+
 ## [0.10.0] - 2026-10-12
 
 ### Added
