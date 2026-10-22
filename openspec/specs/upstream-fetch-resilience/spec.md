@@ -30,6 +30,14 @@ SHALL NOT be retried.
 - **AND** the per-attempt backoff SHALL not exceed a fixed cap
 - **AND** the total added latency SHALL stay within a bounded budget
 
+#### Scenario: No backoff follows the final attempt
+
+- **GIVEN** an upstream GET that fails with a transient transport error on every attempt
+- **WHEN** the request is performed until the retry budget is exhausted
+- **THEN** a backoff wait SHALL occur between consecutive attempts, doubling from the base delay
+- **AND** no backoff wait SHALL occur after the final attempt
+- **AND** the transient error SHALL be surfaced to the caller immediately after the final attempt
+
 #### Scenario: Context cancellation aborts the backoff wait
 
 - **GIVEN** a transient failure has triggered a backoff wait

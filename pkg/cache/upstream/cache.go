@@ -91,6 +91,11 @@ type Cache struct {
 
 	retryBackoff    time.Duration
 	retryBackoffCap time.Duration
+
+	// retryWait blocks for the given backoff delay before a retry, returning
+	// early with the context error on cancellation. It defaults to sleepCtx and
+	// is replaced in tests to observe the requested delays without sleeping.
+	retryWait func(ctx context.Context, d time.Duration) error
 }
 
 // NetrcCredentials holds authentication credentials.
@@ -161,6 +166,7 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 		responseHeaderTimeout: responseHeaderTimeout,
 		retryBackoff:          retryBackoff,
 		retryBackoffCap:       defaultRetryBackoffCap,
+		retryWait:             sleepCtx,
 		httpClient: &http.Client{
 			Transport: opts.Transport,
 		},
@@ -308,18 +314,22 @@ func isRetriableTransportError(err error) bool {
 	return false
 }
 
-// waitRetryBackoff sleeps for the capped exponential backoff for the given
+// waitRetryBackoff waits for the capped exponential backoff for the given
 // zero-based attempt before the next retry, returning early with the context
 // error if the context is cancelled during the wait. A non-positive base
 // disables the delay but still honours cancellation.
 func (c *Cache) waitRetryBackoff(ctx context.Context, attempt int) error {
-	base := c.retryBackoff
-	if base <= 0 {
+	if c.retryBackoff <= 0 {
 		return ctx.Err()
 	}
 
-	// base * 2^attempt, capped (and guarded against shift overflow).
-	delay := base
+	return c.retryWait(ctx, c.retryBackoffDelay(attempt))
+}
+
+// retryBackoffDelay returns base * 2^attempt for the given zero-based attempt,
+// capped at retryBackoffCap (and guarded against shift overflow).
+func (c *Cache) retryBackoffDelay(attempt int) time.Duration {
+	delay := c.retryBackoff
 	for n := 0; n < attempt && delay < c.retryBackoffCap; n++ {
 		delay *= 2
 	}
@@ -328,7 +338,13 @@ func (c *Cache) waitRetryBackoff(ctx context.Context, attempt int) error {
 		delay = c.retryBackoffCap
 	}
 
-	timer := time.NewTimer(delay)
+	return delay
+}
+
+// sleepCtx sleeps for d, returning early with the context error if the context
+// is cancelled during the wait.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
 	defer timer.Stop()
 
 	select {
