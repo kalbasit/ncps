@@ -563,6 +563,34 @@
               runHook postInstall
             '';
           };
+
+        # The release-tag guard run by .github/workflows/releases.yml returns the
+        # specified verdict for every scenario: a stable tag passes only on a
+        # single-parent commit that changes nothing but CHANGELOG.md and adds the
+        # matching `## [X.Y.Z]` heading; alpha/beta/rc tags are exempt; malformed
+        # tags fail. The suite builds its fixture repositories in the sandbox, and
+        # both scripts must pass shellcheck. See the release-tag-guard spec.
+        release-tag-guard-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "ncps-release-tag-guard";
+          src = ../../.github/scripts;
+          dontConfigure = true;
+          nativeBuildInputs = [
+            pkgs.git
+            pkgs.shellcheck
+          ];
+          buildPhase = ''
+            runHook preBuild
+            export HOME="$TMPDIR"
+            shellcheck release-tag-guard.sh release-tag-guard-test.sh
+            bash release-tag-guard-test.sh release-tag-guard.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            touch $out
+            runHook postInstall
+          '';
+        };
       };
     };
 }
