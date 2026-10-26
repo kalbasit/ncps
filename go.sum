@@ -59,8 +59,6 @@ github.com/go-redis/redis/v7 v7.4.1 h1:PASvf36gyUpr2zdOUS/9Zqc80GbM+9BDyiJSJDDOr
 github.com/go-redis/redis/v7 v7.4.1/go.mod h1:JDNMw23GTyLNC4GZu9njt15ctBQVn7xjRfnwdHj/Dcg=
 github.com/go-redis/redis/v8 v8.11.5 h1:AcZZR7igkdvfVmQTPnu9WE37LRrO/YrBH5zWyjDC0oI=
 github.com/go-redis/redis/v8 v8.11.5/go.mod h1:gREzHqY1hg6oD9ngVRbLStwAWKhA0FEgq8Jd4h5lpwo=
-github.com/go-redsync/redsync/v4 v4.18.0 h1:DDM09PEhmNTf/vziolf2x6391y1hHxF5vQ4ytHl9xQc=
-github.com/go-redsync/redsync/v4 v4.18.0/go.mod h1:yuoqcQ55FS1VypSeVTMqFsJqTdWpEH5eA4MQGKJ9c4M=
 github.com/go-redsync/redsync/v4 v4.18.1 h1:vESflzCCKyQKScRkdxQFwtXglNJyz3ZGCLaEj+IUM7c=
 github.com/go-redsync/redsync/v4 v4.18.1/go.mod h1:SjQtx+rI0To8ycKKS6CFqexYxXRZvFuL72gSP+upOco=
 github.com/go-sql-driver/mysql v1.10.1 h1:arlSnNLq6a5yxGxV7qg9lF4j0C+KwD6NbQyKr9QL6ME=
@@ -159,10 +157,10 @@ github.com/prometheus/procfs v0.22.0 h1:6q9+/JL9IKAPbCmBrv9n5O5Ty3NKnciV5X7YGw0o
 github.com/prometheus/procfs v0.22.0/go.mod h1:CvmFr/GVhIjIvWJZW3tgkODBQMRIf0EyWMQLHCHab58=
 github.com/redis/go-redis/v9 v9.23.0 h1:/TTVdJa8BRNsybwwGGnmiYktHNlUXtbOQxlWpHBPL3s=
 github.com/redis/go-redis/v9 v9.23.0/go.mod h1:EWP2UUk+XDaI1s5nQB5mablZN6vccXlmBQTyfnF87D0=
-github.com/redis/rueidis v1.0.77 h1:ZR41bgJcm7oRFb3aSDPrRhC0eonDSrPzjvvZvHIlNjM=
-github.com/redis/rueidis v1.0.77/go.mod h1:L8mnCQJJaSNL6I4pIR6Rz732HTGS9vmuXm0yT9dRvjo=
-github.com/redis/rueidis/rueidiscompat v1.0.77 h1:S1xiLQsFv8XQ46e0LelC8ihGqbDzVRocXXZLzVAeh64=
-github.com/redis/rueidis/rueidiscompat v1.0.77/go.mod h1:aXCvRVUTvTHZY0owHuz9JjveO1hyuzyDWrpJh8/E3Ds=
+github.com/redis/rueidis v1.0.79 h1:2faCYvkq0G8ozDIAn7+3d5k5bBYCc0DBG2THK5WYXF0=
+github.com/redis/rueidis v1.0.79/go.mod h1:L8mnCQJJaSNL6I4pIR6Rz732HTGS9vmuXm0yT9dRvjo=
+github.com/redis/rueidis/rueidiscompat v1.0.79 h1:j6kLhuyLMetbakGuu+5sjuZ3WE01h1LVjoFrc2kmELQ=
+github.com/redis/rueidis/rueidiscompat v1.0.79/go.mod h1:SHSig7K+0XeGOeeeDMmEoJVkd94IBKvBIUbKkRZaxfc=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/riandyrn/otelchi v0.12.3 h1:KW9gA+97d6mExk8vbh0FRwb2biUvpyYlc8YuxP1Oap0=
