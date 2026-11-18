@@ -8,7 +8,7 @@ require (
 	ariga.io/atlas v1.3.0
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.44.0
-	github.com/andybalholm/brotli v1.2.7
+	github.com/andybalholm/brotli v1.3.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-redsync/redsync/v4 v4.18.0
 	github.com/go-sql-driver/mysql v1.10.2
@@ -21,7 +21,7 @@ require (
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/pierrec/lz4/v4 v4.1.33
-	github.com/pressly/goose/v3 v3.29.0
+	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/riandyrn/otelchi v0.12.3
@@ -52,7 +52,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/term v0.47.0
 )
 
@@ -85,7 +85,7 @@ require (
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
-	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/mfridman/interpolate v0.2.0 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
@@ -98,7 +98,7 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
-	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
@@ -112,17 +112,17 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
+	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
