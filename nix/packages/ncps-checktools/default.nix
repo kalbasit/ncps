@@ -38,7 +38,7 @@ _: {
         # narrower; the module dependency list is still everything in
         # go.mod (Go module-mode pulls all required modules), but the
         # source tree hashed here is smaller.
-        vendorHash = "sha256-UKzRvhk/hPoGsgFOVEHGG9sgrgx2CtmNFIX6mBMlhJY=";
+        vendorHash = "sha256-mPT0yx4C3lDa3wby/lnw6n0OpsWaVyshRqqfHSgonX4=";
 
         subPackages = [
           "cmd/ent-lint"
