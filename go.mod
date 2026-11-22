@@ -1,11 +1,11 @@
 module github.com/kalbasit/ncps
 
-go 1.26.7
+go 1.26.10
 
 tool entgo.io/ent/cmd/ent
 
 require (
-	ariga.io/atlas v1.3.0
+	ariga.io/atlas v1.4.0
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.44.0
 	github.com/andybalholm/brotli v1.3.0
