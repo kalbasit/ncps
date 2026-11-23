@@ -71,7 +71,7 @@ jobs:
           # to main does not split the matrix across commits.
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       - uses: cachix/cachix-action@v17
         with:
           name: ncps
